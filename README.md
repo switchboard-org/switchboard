@@ -1,5 +1,7 @@
 ![GitHub Workflow Status (with branch)](https://img.shields.io/github/actions/workflow/status/switchboard-org/switchboard/ci.yaml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/b8033196b71241a18242c53ba868cc45)](https://www.codacy.com/gh/switchboard-org/switchboard/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=switchboard-org/switchboard&amp;utm_campaign=Badge_Grade)
+![GitHub](https://img.shields.io/github/license/switchboard-org/switchboard)
+
 # Switchboard
 
 Switchboard is a configuration-based workflow automation tool that is built for developers. It is open-source,
