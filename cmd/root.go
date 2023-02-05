@@ -24,6 +24,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&varDefFile, "var-file", "./.switchboard/variables.json", "env file with variable values set")
 }
 
+// Execute is the primary entrypoint for the CLI
 func Execute() {
 	rootCmd.AddCommand(cmdValidate)
 	if err := rootCmd.Execute(); err != nil {

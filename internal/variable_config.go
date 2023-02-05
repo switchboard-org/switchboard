@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"errors"
 	"fmt"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/gohcl"
@@ -10,18 +9,18 @@ import (
 	"github.com/zclconf/go-cty/cty/function"
 )
 
-type VariableStepConfig struct {
-	Variables []PartialVariableConfig `hcl:"variable,block"`
+type variableStepConfig struct {
+	Variables []partialVariableConfig `hcl:"variable,block"`
 	Remain    hcl.Body                `hcl:",remain"`
 }
 
-type PartialVariableConfig struct {
+type partialVariableConfig struct {
 	Name   string         `hcl:"name,label"`
 	Type   hcl.Expression `hcl:"type"`
 	Remain hcl.Body       `hcl:",remain"`
 }
 
-func (v *VariableStepConfig) Decode(body hcl.Body) {
+func (v *variableStepConfig) Decode(body hcl.Body) {
 	diag := gohcl.DecodeBody(body, nil, v)
 
 	if diag.HasErrors() {
@@ -32,7 +31,7 @@ func (v *VariableStepConfig) Decode(body hcl.Body) {
 // GetAllVariables takes the provided variable configuration blocks that each have an optional default value,
 // along with a map of discrete override values, and will return a map with coalesced values, with overrides superseding defaults.
 // Will throw an error if a variable has no default or override.
-func (v *VariableStepConfig) GetAllVariables(overrides map[string]cty.Value) map[string]cty.Value {
+func (v *variableStepConfig) GetAllVariables(overrides map[string]cty.Value) map[string]cty.Value {
 	output := make(map[string]cty.Value)
 	//variables will be built up in here and thrown at end if needed.
 	var errorList []error
@@ -68,7 +67,7 @@ func (v *VariableStepConfig) GetAllVariables(overrides map[string]cty.Value) map
 
 // EvaluationContext provides a number of context variables and functions
 // used in defining custom variables in the configuration.
-func (pv *PartialVariableConfig) EvaluationContext() hcl.EvalContext {
+func (pv *partialVariableConfig) EvaluationContext() hcl.EvalContext {
 	evalVars := map[string]cty.Value{
 		"number":  cty.StringVal("number"),
 		"string":  cty.StringVal("string"),
@@ -98,10 +97,10 @@ func (pv *PartialVariableConfig) EvaluationContext() hcl.EvalContext {
 	}
 }
 
-func (pv *PartialVariableConfig) ValidateAndGetType() (cty.Type, []error) {
+func (pv *partialVariableConfig) ValidateAndGetType() (cty.Type, []error) {
 	varList := pv.Type.Variables()
 	if len(varList) == 0 {
-		return cty.NilType, []error{errors.New(fmt.Sprintf("%s: Incorrect attribute value type; Inappropriate value for attribute \"type\": variable required (hint: don't use a primitive)", pv.Type.Range()))}
+		return cty.NilType, []error{fmt.Errorf("%s: Incorrect attribute value type; Inappropriate value for attribute \"type\": variable required (hint: don't use a primitive)", pv.Type.Range())}
 	}
 	varEvalContext := pv.EvaluationContext()
 	typeValue, diag := pv.Type.Value(&varEvalContext)
@@ -128,7 +127,7 @@ func (pv *PartialVariableConfig) ValidateAndGetType() (cty.Type, []error) {
 	return variableType, nil
 }
 
-func (pv *PartialVariableConfig) GetDefaultValue(varType cty.Type) (cty.Value, []error) {
+func (pv *partialVariableConfig) GetDefaultValue(varType cty.Type) (cty.Value, []error) {
 	spec := hcldec.AttrSpec{
 		Name:     "default",
 		Type:     varType,
@@ -141,14 +140,14 @@ func (pv *PartialVariableConfig) GetDefaultValue(varType cty.Type) (cty.Value, [
 	return result, nil
 }
 
-func (pv *PartialVariableConfig) CoalesceValue(varType cty.Type, defaultValue cty.Value, newValue cty.Value) (cty.Value, error) {
+func (pv *partialVariableConfig) CoalesceValue(varType cty.Type, defaultValue cty.Value, newValue cty.Value) (cty.Value, error) {
 	if newValue.IsNull() && defaultValue.IsNull() {
-		return cty.NilVal, errors.New(fmt.Sprintf("%s: No default or override value provided for '%s'", pv.Type.Range(), pv.Name))
+		return cty.NilVal, fmt.Errorf("%s: No default or override value provided for '%s'", pv.Type.Range(), pv.Name)
 	}
 
 	if !newValue.IsNull() {
 		if !varType.Equals(newValue.Type()) {
-			return cty.NilVal, errors.New(fmt.Sprintf("%s: Incorrect override value type; Incorrect value for variable \"%s\": Expected '%s', Got '%s'", pv.Type.Range(), pv.Name, varType.FriendlyName(), newValue.Type().FriendlyName()))
+			return cty.NilVal, fmt.Errorf("%s: Incorrect override value type; Incorrect value for variable \"%s\": Expected '%s', Got '%s'", pv.Type.Range(), pv.Name, varType.FriendlyName(), newValue.Type().FriendlyName())
 		}
 		return newValue, nil
 	}

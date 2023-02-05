@@ -7,7 +7,7 @@ func Load(workingDir string, varFile string) {
 
 	//validate custom variable blocks
 	variableOverrides := getVariableDataFromJSONFile(varFile)
-	var variableConfig VariableStepConfig
+	var variableConfig variableStepConfig
 	variableConfig.Decode(rawBody)
 	variableConfig.GetAllVariables(variableOverrides)
 }

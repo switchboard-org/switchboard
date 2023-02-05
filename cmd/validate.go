@@ -9,9 +9,9 @@ var cmdValidate = &cobra.Command{
 	Use:   "validate",
 	Short: "Validate your workflow configuration",
 	Long:  "Validates your workflow configuration files, including variables, providers, triggers, and steps",
-	Run:   Validate,
+	Run:   validate,
 }
 
-func Validate(cmd *cobra.Command, args []string) {
+func validate(cmd *cobra.Command, args []string) {
 	internal.Load(workingDir, varDefFile)
 }

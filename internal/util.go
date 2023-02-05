@@ -53,6 +53,7 @@ func loadAllHclFilesInDir(path string) hcl.Body {
 	return hcl.MergeFiles(parsedFiles)
 }
 
+// CurrentWorkingDir returns the value of the working directory that the CLI is executed in.
 func CurrentWorkingDir() string {
 	ex, err := os.Executable()
 	if err != nil {
@@ -84,8 +85,7 @@ func getVariableDataFromJSONFile(varFile string) map[string]cty.Value {
 			log.Fatalf("'%s' JSON file must be in object format (key/val)", varFile)
 		}
 		return val.AsValueMap()
-	} else {
-		log.Printf("WARNING: could not open '%s' json file with variable overrides", varFile)
 	}
+	log.Printf("WARNING: could not open '%s' json file with variable overrides", varFile)
 	return make(map[string]cty.Value)
 }
