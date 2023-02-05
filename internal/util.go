@@ -36,16 +36,11 @@ func displayErrorsAndThrow(errs []error) {
 	os.Exit(1)
 }
 
-// loadAllHclFilesIntoParsedBody finds all '.hcl' files in the working
+// loadAllHclFilesInDir finds all '.hcl' files in the working
 // directory and any child directories (including deeply nested dirs) and transforms it into a parsed hcl.Body.
-func loadAllHclFilesIntoParsedBody() hcl.Body {
+func loadAllHclFilesInDir(path string) hcl.Body {
 	parser := hclparse.NewParser()
-	ex, err := os.Executable()
-	if err != nil {
-		panic(err)
-	}
-	exPath := filepath.Dir(ex)
-	allHclFiles := findAllFiles(exPath, ".hcl")
+	allHclFiles := findAllFiles(path, ".hcl")
 	var parsedFiles []*hcl.File
 	for _, file := range allHclFiles {
 		parsedFile, diag := parser.ParseHCLFile(file)
@@ -56,6 +51,14 @@ func loadAllHclFilesIntoParsedBody() hcl.Body {
 	}
 
 	return hcl.MergeFiles(parsedFiles)
+}
+
+func CurrentWorkingDir() string {
+	ex, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	return filepath.Dir(ex)
 }
 
 // getVariableDataFromJSONFile loads a json object file and serializes it into a map of name/value pairs.

@@ -10,25 +10,18 @@ import (
 	"github.com/zclconf/go-cty/cty/function"
 )
 
-type VariablesConfig struct {
+type VariableStepConfig struct {
 	Variables []PartialVariableConfig `hcl:"variable,block"`
 	Remain    hcl.Body                `hcl:",remain"`
 }
 
 type PartialVariableConfig struct {
-	Name      string         `hcl:"name,label"`
-	Type      hcl.Expression `hcl:"type"`
-	Remain    hcl.Body       `hcl:",remain"`
-	nameValue string
+	Name   string         `hcl:"name,label"`
+	Type   hcl.Expression `hcl:"type"`
+	Remain hcl.Body       `hcl:",remain"`
 }
 
-type FinalVariable struct {
-	Name  string
-	Type  cty.Type
-	Value cty.Value
-}
-
-func (v *VariablesConfig) Decode(body hcl.Body) {
+func (v *VariableStepConfig) Decode(body hcl.Body) {
 	diag := gohcl.DecodeBody(body, nil, v)
 
 	if diag.HasErrors() {
@@ -39,7 +32,7 @@ func (v *VariablesConfig) Decode(body hcl.Body) {
 // GetAllVariables takes the provided variable configuration blocks that each have an optional default value,
 // along with a map of discrete override values, and will return a map with coalesced values, with overrides superseding defaults.
 // Will throw an error if a variable has no default or override.
-func (v *VariablesConfig) GetAllVariables(overrides map[string]cty.Value) map[string]cty.Value {
+func (v *VariableStepConfig) GetAllVariables(overrides map[string]cty.Value) map[string]cty.Value {
 	output := make(map[string]cty.Value)
 	//variables will be built up in here and thrown at end if needed.
 	var errorList []error
