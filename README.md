@@ -4,8 +4,8 @@
 
 # Switchboard
 
-Switchboard is a configuration-based workflow automation tool that is built for developers. It is open-source,
-highly-extensible, and configuration-first, and is designed to be human-readable while still meeting the most
+Switchboard is a workflow automation tool built for developers. It is open-source,
+highly-extensible, configuration-first, and is designed to be human-readable while still meeting the most
 essential needs of a developer.
 
 ## Key Features
@@ -20,13 +20,16 @@ essential needs of a developer.
 6. **And Much More** -> Managed Authentication, Automated Trigger Registration, Effective Error and Retry Settings, just
    to name a few.
 
-## Switchboard CLI
+## Repository Contents
 
-This repository specifically includes the Switchboard CLI, written in GO, and the main tool used by developers within
-the
-Switchboard toolset ecosystem. In order to start authoring workflows, you will need to download the latest
-version onto your box. You can find the latest release in the
+This repository includes a selection of tools, packages, and content. Specifically,
+1. The Switchboard CLI - written in GO and is the main tool used by developers within the
+Switchboard toolset ecosystem. You can find the latest release in the
 [releases](https://github.com/switchboard-org/switchboard/releases) page.
+2. Shared Packages & Modules - libraries that are shared in other tools within the Switchboard toolset.
+You can find this in the `/internal/shared` folder
+3. Docs - All written in markdown, and synced with Gitbook. These files are stored in `/docs`. Find
+the Gitbook hosted docs at https://docs.go-switchboard.com
 
 ### Primary CLI Commands
 

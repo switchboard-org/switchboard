@@ -98,7 +98,7 @@ func Test_loadAllHclFilesInDir(t *testing.T) {
 		name string
 	}{
 		{
-			name: "load all config files in current and children directories",
+			name: "load all shared files in current and children directories",
 		},
 	}
 	for _, tt := range tests {

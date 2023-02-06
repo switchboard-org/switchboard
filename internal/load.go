@@ -1,6 +1,6 @@
 package internal
 
-// Load is responsible for validating all config settings, and will throw an error
+// Load is responsible for validating all shared settings, and will throw an error
 // if anything is incorrectly configured.
 func Load(workingDir string, varFile string) {
 	rawBody := loadAllHclFilesInDir(workingDir)
