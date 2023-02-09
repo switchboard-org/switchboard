@@ -3,7 +3,6 @@ package internal
 import (
 	"fmt"
 	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/gohcl"
 	"github.com/hashicorp/hcl/v2/hcldec"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
@@ -20,54 +19,46 @@ type partialVariableConfig struct {
 	Remain hcl.Body       `hcl:",remain"`
 }
 
-func (v *variableStepConfig) Decode(body hcl.Body) {
-	diag := gohcl.DecodeBody(body, nil, v)
-
-	if diag.HasErrors() {
-		displayErrorsAndThrow(diag.Errs())
-	}
-}
-
-// GetAllVariables takes the provided variable configuration blocks that each have an optional default value,
+// CalculatedVariables takes the provided variable configuration blocks that each have an optional default value,
 // along with a map of discrete override values, and will return a map with coalesced values, with overrides superseding defaults.
 // Will throw an error if a variable has no default or override.
-func (v *variableStepConfig) GetAllVariables(overrides map[string]cty.Value) map[string]cty.Value {
+func (v *variableStepConfig) CalculatedVariables(overrides map[string]cty.Value) (map[string]cty.Value, hcl.Diagnostics) {
 	output := make(map[string]cty.Value)
 	//variables will be built up in here and thrown at end if needed.
-	var errorList []error
+	var diagFinal hcl.Diagnostics
 
 	for _, partial := range v.Variables {
 		//check that var types are valid
-		varType, errs := partial.ValidateAndGetType()
-		if len(errs) > 0 {
-			errorList = append(errorList, errs...)
+		varType, diag := partial.calculatedType()
+		if diag.HasErrors() {
+			diagFinal = diagFinal.Extend(diag)
 			continue
 		}
 		//check that defaults are correct type
-		defaultVal, errs := partial.GetDefaultValue(varType)
-		if len(errs) > 0 {
-			errorList = append(errorList, errs...)
+		defaultVal, diag := partial.defaultValue(varType)
+		if diag.HasErrors() {
+			diagFinal = diagFinal.Extend(diag)
 			continue
 		}
 
 		overrideVal := overrides[partial.Name]
 		//override defaults if necessary
-		variableValue, err := partial.CoalesceValue(varType, defaultVal, overrideVal)
-		if err != nil {
-			errorList = append(errorList, err)
+		variableValue, diag := partial.coalescedValue(varType, defaultVal, overrideVal)
+		if diag.HasErrors() {
+			diagFinal = diagFinal.Extend(diag)
 			continue
 		}
 		output[partial.Name] = variableValue
 	}
-	if len(errorList) > 0 {
-		displayErrorsAndThrow(errorList)
+	if diagFinal.HasErrors() {
+		return nil, diagFinal
 	}
-	return output
+	return output, diagFinal
 }
 
-// EvaluationContext provides a number of context variables and functions
-// used in defining custom variables in the configuration.
-func (pv *partialVariableConfig) EvaluationContext() hcl.EvalContext {
+// evaluationContext provides a number of context variables and functions
+// used in defining custom variables in the configuration. Only use for parsing variables
+func (pv *partialVariableConfig) evaluationContext() hcl.EvalContext {
 	evalVars := map[string]cty.Value{
 		"number":  cty.StringVal("number"),
 		"string":  cty.StringVal("string"),
@@ -97,15 +88,27 @@ func (pv *partialVariableConfig) EvaluationContext() hcl.EvalContext {
 	}
 }
 
-func (pv *partialVariableConfig) ValidateAndGetType() (cty.Type, []error) {
+func (pv *partialVariableConfig) calculatedType() (cty.Type, hcl.Diagnostics) {
 	varList := pv.Type.Variables()
 	if len(varList) == 0 {
-		return cty.NilType, []error{fmt.Errorf("%s: Incorrect attribute value type; Inappropriate value for attribute \"type\": variable required (hint: don't use a primitive)", pv.Type.Range())}
+		varRange := pv.Type.Range()
+		diagnostic := hcl.Diagnostic{
+			Severity:    hcl.DiagError,
+			Summary:     "Incorrect attribute value type",
+			Detail:      fmt.Sprintf("%s: Incorrect attribute value type; Inappropriate value for attribute \"type\": variable required (hint: don't use a primitive)", pv.Type.Range()),
+			Subject:     &varRange,
+			Context:     nil,
+			Expression:  pv.Type,
+			EvalContext: nil,
+			Extra:       nil,
+		}
+		diag := hcl.Diagnostics{}
+		return cty.NilType, diag.Append(&diagnostic)
 	}
-	varEvalContext := pv.EvaluationContext()
+	varEvalContext := pv.evaluationContext()
 	typeValue, diag := pv.Type.Value(&varEvalContext)
 	if diag.HasErrors() {
-		return cty.NilType, diag.Errs()
+		return cty.NilType, diag
 	}
 	var variableType cty.Type
 
@@ -127,27 +130,40 @@ func (pv *partialVariableConfig) ValidateAndGetType() (cty.Type, []error) {
 	return variableType, nil
 }
 
-func (pv *partialVariableConfig) GetDefaultValue(varType cty.Type) (cty.Value, []error) {
+func (pv *partialVariableConfig) defaultValue(varType cty.Type) (cty.Value, hcl.Diagnostics) {
 	spec := hcldec.AttrSpec{
 		Name:     "default",
 		Type:     varType,
 		Required: false,
 	}
-	result, diag := hcldec.Decode(pv.Remain, &spec, nil)
-	if diag.HasErrors() {
-		return cty.NilVal, diag.Errs()
-	}
-	return result, nil
+	return hcldec.Decode(pv.Remain, &spec, nil)
 }
 
-func (pv *partialVariableConfig) CoalesceValue(varType cty.Type, defaultValue cty.Value, newValue cty.Value) (cty.Value, error) {
+func (pv *partialVariableConfig) coalescedValue(varType cty.Type, defaultValue cty.Value, newValue cty.Value) (cty.Value, hcl.Diagnostics) {
+	varRange := pv.Type.Range()
+	diagnostic := hcl.Diagnostic{
+		Severity:    hcl.DiagError,
+		Summary:     "Incorrect attribute value type",
+		Detail:      fmt.Sprintf("No default or override value provided for '%s'", pv.Name),
+		Subject:     &varRange,
+		Context:     nil,
+		Expression:  pv.Type,
+		EvalContext: nil,
+		Extra:       nil,
+	}
 	if newValue.IsNull() && defaultValue.IsNull() {
-		return cty.NilVal, fmt.Errorf("%s: No default or override value provided for '%s'", pv.Type.Range(), pv.Name)
+		diagnostic.Summary = "No default or override value provided"
+		diagnostic.Detail = fmt.Sprintf("No default or override value provided for '%s'", pv.Name)
+		diag := hcl.Diagnostics{}
+		return cty.NilVal, diag.Append(&diagnostic)
 	}
 
 	if !newValue.IsNull() {
 		if !varType.Equals(newValue.Type()) {
-			return cty.NilVal, fmt.Errorf("%s: Incorrect override value type; Incorrect value for variable \"%s\": Expected '%s', Got '%s'", pv.Type.Range(), pv.Name, varType.FriendlyName(), newValue.Type().FriendlyName())
+			diagnostic.Summary = "Incorrect override value type"
+			diagnostic.Detail = fmt.Sprintf("Incorrect override value type; Incorrect value for variable \"%s\": Expected '%s', Got '%s'", pv.Name, varType.FriendlyName(), newValue.Type().FriendlyName())
+			diag := hcl.Diagnostics{}
+			return cty.NilVal, diag.Append(&diagnostic)
 		}
 		return newValue, nil
 	}

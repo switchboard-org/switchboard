@@ -3,9 +3,8 @@ variable "service_address" {
   default = "https://my-server.com"
 }
 
-variable "service_user" {
+variable "service_active" {
   type = boolean
-  default = true
 }
 
 variable "service_password" {
@@ -13,6 +12,11 @@ variable "service_password" {
   default = 1
 }
 
-variable "other" {
+variable "service_user" {
+  type = string
+  default = "mary"
+}
+
+variable "service_other" {
   type = number
 }

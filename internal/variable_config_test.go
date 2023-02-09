@@ -2,22 +2,15 @@ package internal
 
 import (
 	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclparse"
 	"github.com/hashicorp/hcl/v2/hclsimple"
 	"github.com/zclconf/go-cty/cty"
 	"reflect"
+	"strings"
 	"testing"
 )
 
-func getDecodedVariableStepConfig(fileName string) variableStepConfig {
-	var configOutput variableStepConfig
-	err := hclsimple.DecodeFile(fileName, nil, &configOutput)
-	if err != nil {
-		panic(err)
-	}
-	return configOutput
-}
-
-func Test_partialVariableConfig_CoalesceValue(t *testing.T) {
+func Test_partialVariableConfig_coalesceValue(t *testing.T) {
 	type args struct {
 		varType      cty.Type
 		defaultValue cty.Value
@@ -81,145 +74,193 @@ func Test_partialVariableConfig_CoalesceValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pv := tt.config
-			got, err := pv.CoalesceValue(tt.args.varType, tt.args.defaultValue, tt.args.newValue)
+			got, err := pv.coalescedValue(tt.args.varType, tt.args.defaultValue, tt.args.newValue)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("CoalesceValue() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("coalescedValue() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("CoalesceValue() got = %v, want %v", got, tt.want)
+				t.Errorf("coalescedValue() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func Test_partialVariableConfig_EvaluationContext(t *testing.T) {
+func Test_partialVariableConfig_evaluationContext(t *testing.T) {
 	decodedConfig := getDecodedVariableStepConfig("../fixtures/variable_config/variables.hcl")
 	partial := decodedConfig.Variables[0]
 	t.Run("should return expected variables and functions used for variable processing", func(t *testing.T) {
-		got := partial.EvaluationContext()
+		got := partial.evaluationContext()
 		if got.Variables["number"] != cty.StringVal("number") ||
 			got.Variables["string"] != cty.StringVal("string") ||
 			got.Variables["boolean"] != cty.StringVal("boolean") {
-			t.Errorf("EvaluationContext() did not provider the expected variables")
+			t.Errorf("evaluationContext() did not provider the expected variables")
 		}
 		calledListFunc, err := got.Functions["list"].Call([]cty.Value{cty.StringVal("string")})
 		if err != nil || calledListFunc.AsString() != "list(string)" {
-			t.Errorf("EvaluationContext() did not provide a function named list, or it is implemented incorrectly")
+			t.Errorf("evaluationContext() did not provide a function named list, or it is implemented incorrectly")
 		}
 	})
 
 }
 
-func Test_partialVariableConfig_GetDefaultValue(t *testing.T) {
-	type fields struct {
-		Name   string
-		Type   hcl.Expression
-		Remain hcl.Body
-	}
+func Test_partialVariableConfig_defaultValue(t *testing.T) {
 	type args struct {
 		varType cty.Type
 	}
+
+	decodedConfig := getDecodedVariableStepConfig("../fixtures/variable_config/variables.hcl")
+	partialStringWithDefault := decodedConfig.Variables[0]
+	partialBoolWithoutDefault := decodedConfig.Variables[1]
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   cty.Value
-		want1  []error
+		name                 string
+		fields               partialVariableConfig
+		args                 args
+		want                 cty.Value
+		wantErrorCount       int
+		errorMessageIncludes []string
 	}{
-		// TODO: Add test cases.
+		{
+			"decode default into value",
+			partialStringWithDefault,
+			args{cty.String},
+			cty.StringVal("https://my-server.com"),
+			0,
+			nil,
+		},
+		{
+			"decode default even if none provided (optionality), but as null value",
+			partialBoolWithoutDefault,
+			args{cty.Bool},
+			cty.NullVal(cty.Bool),
+			0,
+			nil,
+		},
+		{
+			"return diagnostic if default value is not the same type as expected",
+			partialStringWithDefault,
+			args{cty.Bool},
+			cty.UnknownVal(cty.Bool),
+			1,
+			[]string{"Incorrect attribute value type"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pv := &partialVariableConfig{
-				Name:   tt.fields.Name,
-				Type:   tt.fields.Type,
-				Remain: tt.fields.Remain,
+			pv := tt.fields
+			got, got1 := pv.defaultValue(tt.args.varType)
+			if !got.RawEquals(tt.want) {
+				t.Errorf("defaultValue() got = %v, want %v", got.GoString(), tt.want.GoString())
 			}
-			got, got1 := pv.GetDefaultValue(tt.args.varType)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetDefaultValue() got = %v, want %v", got, tt.want)
+			if len(got1.Errs()) != tt.wantErrorCount {
+				t.Errorf("defaultValue() expected error count = %v, want %v", len(got1.Errs()), tt.wantErrorCount)
 			}
-			if !reflect.DeepEqual(got1, tt.want1) {
-				t.Errorf("GetDefaultValue() got1 = %v, want %v", got1, tt.want1)
+			if len(tt.errorMessageIncludes) > 0 {
+				for i, msg := range got1.Errs() {
+					if !strings.Contains(msg.Error(), tt.errorMessageIncludes[i]) {
+						t.Errorf("calculatedType() expected error message '%s' at index '%v' to contain '%s', but did not", msg, i, tt.errorMessageIncludes[i])
+					}
+				}
 			}
 		})
 	}
 }
 
-func Test_partialVariableConfig_ValidateAndGetType(t *testing.T) {
-	type fields struct {
-		Name   string
-		Type   hcl.Expression
-		Remain hcl.Body
-	}
+func Test_partialVariableConfig_calculatedType(t *testing.T) {
+	decodedConfig := getDecodedVariableStepConfig("../fixtures/variable_config/variables.hcl")
+	partialStringWithDefault := decodedConfig.Variables[0]
+
+	badDecodedConfig := getDecodedVariableStepConfig("../fixtures/variable_config/variables_invalid_types.hcl")
+	partialWithTypeSetToString := badDecodedConfig.Variables[0]
+	partialWithTypeSetToInvalidExpression := badDecodedConfig.Variables[1]
 	tests := []struct {
-		name   string
-		fields fields
-		want   cty.Type
-		want1  []error
+		name                 string
+		fields               partialVariableConfig
+		want                 cty.Type
+		wantErrorCount       int
+		errorMessageIncludes []string
 	}{
-		// TODO: Add test cases.
+		{
+			"return error if 'type' field is not an hcl expression",
+			partialWithTypeSetToString,
+			cty.NilType,
+			1,
+			[]string{"Incorrect attribute value type"},
+		},
+		{
+			"return error if 'type' field is an invalid hcl expression",
+			partialWithTypeSetToInvalidExpression,
+			cty.NilType,
+			1,
+			[]string{"Unknown variable"},
+		},
+		{
+			"return the string value of the type if correct expression used",
+			partialStringWithDefault,
+			cty.String,
+			0,
+			nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pv := &partialVariableConfig{
-				Name:   tt.fields.Name,
-				Type:   tt.fields.Type,
-				Remain: tt.fields.Remain,
+			pv := tt.fields
+			got, got1 := pv.calculatedType()
+			if !got.Equals(tt.want) {
+				t.Errorf("calculatedType() got = %v, want %v", got.GoString(), tt.want.GoString())
 			}
-			got, got1 := pv.ValidateAndGetType()
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ValidateAndGetType() got = %v, want %v", got, tt.want)
+			if len(got1.Errs()) != tt.wantErrorCount {
+				t.Errorf("calculatedType() expected error count = %v, want %v", len(got1.Errs()), tt.wantErrorCount)
 			}
-			if !reflect.DeepEqual(got1, tt.want1) {
-				t.Errorf("ValidateAndGetType() got1 = %v, want %v", got1, tt.want1)
+			if len(tt.errorMessageIncludes) > 0 {
+				for i, msg := range got1.Errs() {
+					if !strings.Contains(msg.Error(), tt.errorMessageIncludes[i]) {
+						t.Errorf("calculatedType() expected error message '%s' at index '%v' to contain '%s', but did not", msg, i, tt.errorMessageIncludes[i])
+					}
+				}
 			}
 		})
 	}
 }
 
-func Test_variableStepConfig_Decode(t *testing.T) {
-	type fields struct {
-		Variables []partialVariableConfig
-		Remain    hcl.Body
-	}
-	type args struct {
-		body hcl.Body
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			v := &variableStepConfig{
-				Variables: tt.fields.Variables,
-				Remain:    tt.fields.Remain,
-			}
-			v.Decode(tt.args.body)
-		})
-	}
-}
+func Test_variableStepConfig_CalculatedVariables(t *testing.T) {
 
-func Test_variableStepConfig_GetAllVariables(t *testing.T) {
-	type fields struct {
-		Variables []partialVariableConfig
-		Remain    hcl.Body
-	}
+	variableOverrides := getVariableDataFromJSONFile("../fixtures/variable_config/overrides.json")
+	decodedConfig := getDecodedVariableStepConfig("../fixtures/variable_config/variables.hcl")
 	type args struct {
 		overrides map[string]cty.Value
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   map[string]cty.Value
+		name           string
+		fields         variableStepConfig
+		args           args
+		want           map[string]cty.Value
+		wantErrorCount int
 	}{
-		// TODO: Add test cases.
+		{
+			"successfully decode variables and set overrides",
+			decodedConfig,
+			args{
+				variableOverrides,
+			},
+			map[string]cty.Value{
+				"service_address":  cty.StringVal("https://my-server.com"),
+				"service_active":   cty.BoolVal(true),
+				"service_password": cty.NumberIntVal(1),
+				"service_user":     cty.StringVal("joe"),
+				"service_other":    cty.NumberIntVal(1),
+			},
+			0,
+		},
+		{
+			"should return multiple diagnostics for all issues (no provided default or override, in this case)",
+			decodedConfig,
+			args{
+				nil,
+			},
+			nil,
+			2,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -227,9 +268,41 @@ func Test_variableStepConfig_GetAllVariables(t *testing.T) {
 				Variables: tt.fields.Variables,
 				Remain:    tt.fields.Remain,
 			}
-			if got := v.GetAllVariables(tt.args.overrides); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetAllVariables() = %v, want %v", got, tt.want)
+			got, diag := v.CalculatedVariables(tt.args.overrides)
+			if len(got) != len(tt.want) {
+				t.Errorf("CalculatedVariables() expected to have a map with %v keys. Got %v", len(tt.want), len(got))
+			}
+			for k, v := range tt.want {
+				if gotVal, ok := got[k]; !ok {
+					t.Errorf("CalculatedVariables() expected returned map to have '%s' key, but none exists", k)
+				} else {
+					if !gotVal.RawEquals(v) {
+						t.Errorf("CalculatedVariables() expected map key '%s' to = %s got = %s", k, v.GoString(), gotVal.GoString())
+					}
+				}
+			}
+			if len(diag.Errs()) != tt.wantErrorCount {
+				t.Errorf("CalculatedVariables() expected to have %v errors. Got %v", tt.wantErrorCount, len(diag.Errs()))
 			}
 		})
 	}
+}
+
+func getDecodedVariableStepConfig(fileName string) variableStepConfig {
+	var configOutput variableStepConfig
+	err := hclsimple.DecodeFile(fileName, nil, &configOutput)
+	if err != nil {
+		panic(err)
+	}
+	return configOutput
+}
+
+func getParsedBody(fileName string) hcl.Body {
+	parser := hclparse.NewParser()
+	parsedFile, diag := parser.ParseHCLFile(fileName)
+	if diag.HasErrors() {
+		panic(diag.Errs())
+	}
+	return parsedFile.Body
+
 }

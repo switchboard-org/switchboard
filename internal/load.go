@@ -1,13 +1,29 @@
 package internal
 
-// Load is responsible for validating all shared settings, and will throw an error
-// if anything is incorrectly configured.
-func Load(workingDir string, varFile string) {
+import (
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/gohcl"
+	"switchboard/internal/shared"
+)
+
+// Load goes through the user provided config & calculates any expressions, returning a nearly completely
+// decoded config struct. Some values will remain expressions as they are only known in a separate process.
+// It will short circuit with any errors and return to the caller if necessary.
+func Load(workingDir string, varFile string) (*shared.SwitchboardConfig, hcl.Diagnostics) {
 	rawBody := loadAllHclFilesInDir(workingDir)
 
 	//validate custom variable blocks
 	variableOverrides := getVariableDataFromJSONFile(varFile)
 	var variableConfig variableStepConfig
-	variableConfig.Decode(rawBody)
-	variableConfig.GetAllVariables(variableOverrides)
+	diag := gohcl.DecodeBody(rawBody, nil, variableConfig)
+	if diag.HasErrors() {
+		return nil, diag
+	}
+	_, diag = variableConfig.CalculatedVariables(variableOverrides)
+	if diag.HasErrors() {
+		return nil, diag
+	}
+	//check if providers are downloaded
+	//remain := variableConfig.Remain
+	return nil, nil
 }
