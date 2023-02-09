@@ -103,8 +103,14 @@ func Test_loadAllHclFilesInDir(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := loadAllHclFilesInDir(fmt.Sprint("../fixtures/basic"))
-			_, diag := hcldec.Decode(result, spec, nil)
+			result, diag := loadAllHclFilesInDir(fmt.Sprint("../fixtures/basic"))
+			if diag.HasErrors() {
+				for _, err := range diag.Errs() {
+					t.Logf(err.Error())
+				}
+				t.Fail()
+			}
+			_, diag = hcldec.Decode(result, spec, nil)
 			if diag.HasErrors() {
 				for _, err := range diag.Errs() {
 					t.Logf(err.Error())

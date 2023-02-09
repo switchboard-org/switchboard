@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+	"log"
 	"switchboard/internal"
 )
 
@@ -13,5 +14,11 @@ var cmdValidate = &cobra.Command{
 }
 
 func validate(cmd *cobra.Command, args []string) {
-	internal.Load(workingDir, varDefFile)
+	_, diag := internal.LoadConfig(workingDir, varDefFile)
+	if diag.HasErrors() {
+		for _, err := range diag.Errs() {
+			log.Println(err)
+			return
+		}
+	}
 }

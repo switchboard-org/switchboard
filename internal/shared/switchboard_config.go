@@ -19,6 +19,22 @@ type SwitchboardConfig struct {
 	Providers   []Provider  `hcl:"provider,block"`
 }
 
+// EvalContext is the high level evaluation context object used for evaluating expressions throughout
+// the various blocks of the parent configuration. Note: The SwitchboardConfig.Variables should
+// already be calculated and set before this can be used to evaluate other root blocks
+// on the SwitchboardConfig object.
+func (conf *SwitchboardConfig) EvalContext() hcl.EvalContext {
+	var evalContext hcl.EvalContext
+	var evalContextVariables map[string]cty.Value
+	for _, value := range conf.Variables {
+		evalContextVariables[value.Name] = value.Value
+	}
+
+	evalContext.Variables = evalContextVariables
+	evalContext.Functions = generalContextFunctions()
+	return evalContext
+}
+
 // Variable contains the final variable value as calculated by the Load
 // command, which may contain a mixture of default and override values, as provided by the user.
 type Variable struct {
@@ -27,21 +43,31 @@ type Variable struct {
 	Value cty.Value `hcl:"value"`
 }
 
+// Switchboard contains the primary global configuration elements of all workflows,
+// including the required providers, log settings, retry settings, and more.
 type Switchboard struct {
-	Version string `hcl:"version"`
+	Version           string             `hcl:"version"`
+	RequiredProviders []RequiredProvider `hcl:"required_providers,block"`
 }
 
-type Provider struct {
+// RequiredProvider tells us where a provider should be pulled from, and which version it
+// should use.
+type RequiredProvider struct {
 	Name    string `hcl:"name,label"`
 	Source  string `hcl:"source"`
 	Version string `hcl:"version"`
-	//remaining values defined by each provider
+}
+
+// Provider block lets a user configure various settings for a particular provider, such
+// as auth contexts and other provider-specific settings. A Provider block will be mapped to a
+// RequiredProvider block by matching "name" block labels.
+type Provider struct {
+	Name           string                  `hcl:"name,label"`
+	Authorizations []ProviderAuthorization `hcl:"authorization,block"`
+	//providers can have their own schemas for provider blocks. They will fall into the Remain field
 	Remain hcl.Body `hcl:",remain"`
 }
 
-// GetEvaluationContext provides the entire evaluation context needed for running a workflow.
-// Specifically, the evaluation context includes all variables, as set in the SwitchboardConfig.Variables
-// list, as well as a number of useful functions that can be used inside of trigger, workflow, and step blocks.
-func (c *SwitchboardConfig) GetEvaluationContext() {
-
+type ProviderAuthorization struct {
+	Name string `hcl:"name,label"`
 }

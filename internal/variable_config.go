@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hcldec"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
+	"switchboard/internal/shared"
 )
 
 type variableStepConfig struct {
@@ -22,8 +23,8 @@ type partialVariableConfig struct {
 // CalculatedVariables takes the provided variable configuration blocks that each have an optional default value,
 // along with a map of discrete override values, and will return a map with coalesced values, with overrides superseding defaults.
 // Will throw an error if a variable has no default or override.
-func (v *variableStepConfig) CalculatedVariables(overrides map[string]cty.Value) (map[string]cty.Value, hcl.Diagnostics) {
-	output := make(map[string]cty.Value)
+func (v *variableStepConfig) CalculatedVariables(overrides map[string]cty.Value) ([]shared.Variable, hcl.Diagnostics) {
+	var output []shared.Variable
 	//variables will be built up in here and thrown at end if needed.
 	var diagFinal hcl.Diagnostics
 
@@ -48,7 +49,12 @@ func (v *variableStepConfig) CalculatedVariables(overrides map[string]cty.Value)
 			diagFinal = diagFinal.Extend(diag)
 			continue
 		}
-		output[partial.Name] = variableValue
+		variableConfig := shared.Variable{
+			Name:  partial.Name,
+			Type:  varType,
+			Value: variableValue,
+		}
+		output = append(output, variableConfig)
 	}
 	if diagFinal.HasErrors() {
 		return nil, diagFinal

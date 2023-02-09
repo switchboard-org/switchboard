@@ -1,0 +1,63 @@
+package shared
+
+import (
+	"github.com/zclconf/go-cty/cty/function"
+	"github.com/zclconf/go-cty/cty/function/stdlib"
+)
+
+func generalContextFunctions() map[string]function.Function {
+	return map[string]function.Function{
+		"add":               stdlib.AddFunc,
+		"absolute":          stdlib.AbsoluteFunc,
+		"ceil":              stdlib.CeilFunc,
+		"coalesce":          stdlib.CoalesceFunc,
+		"compact_list":      stdlib.CompactFunc,
+		"concat":            stdlib.ConcatFunc,
+		"contains":          stdlib.ContainsFunc,
+		"distinct":          stdlib.DistinctFunc,
+		"divide":            stdlib.DivideFunc,
+		"element":           stdlib.ElementFunc,
+		"equal":             stdlib.EqualFunc,
+		"floor":             stdlib.FloorFunc,
+		"format":            stdlib.FormatFunc,
+		"format_date":       stdlib.FormatDateFunc,
+		"greater_than":      stdlib.GreaterThanFunc,
+		"greater_than_or_e": stdlib.GreaterThanOrEqualToFunc,
+		"index":             stdlib.IndexFunc,
+		"int":               stdlib.IntFunc,
+		"join":              stdlib.JoinFunc,
+		"keys":              stdlib.KeysFunc,
+		"length":            stdlib.LengthFunc,
+		"less_than":         stdlib.LessThanFunc,
+		"less_than_or_e":    stdlib.LessThanOrEqualToFunc,
+		"log":               stdlib.LogFunc,
+		"lower":             stdlib.LowerFunc,
+		"max":               stdlib.MaxFunc,
+		"min":               stdlib.MinFunc,
+		"modulo":            stdlib.ModuloFunc,
+		"multiply":          stdlib.MultiplyFunc,
+		"negate":            stdlib.NegateFunc,
+		"not":               stdlib.NotFunc,
+		"not_equal":         stdlib.NotEqualFunc,
+		"or":                stdlib.OrFunc,
+		"parse_int":         stdlib.ParseIntFunc,
+		"power":             stdlib.PowFunc,
+		"regex":             stdlib.RegexFunc,
+		"regex_all":         stdlib.RegexAllFunc,
+		"regex_replace":     stdlib.RegexReplaceFunc,
+		"reverse":           stdlib.ReverseFunc,
+		"reverse_list":      stdlib.ReverseListFunc,
+		"slice":             stdlib.SliceFunc,
+		"sort":              stdlib.SortFunc,
+		"split":             stdlib.SplitFunc,
+		"string_len":        stdlib.SplitFunc,
+		"substring":         stdlib.SubstrFunc,
+		"subtract":          stdlib.SubtractFunc,
+		"time_add":          stdlib.TimeAddFunc,
+		"title":             stdlib.TitleFunc,
+		"trim":              stdlib.TrimFunc,
+		"trim_left":         stdlib.TrimPrefixFunc,
+		"trim_right":        stdlib.TrimSuffixFunc,
+		"upper":             stdlib.UpperFunc,
+	}
+}

@@ -1,16 +1,15 @@
 package internal
 
 import (
-	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hclparse"
 	"github.com/hashicorp/hcl/v2/hclsimple"
 	"github.com/zclconf/go-cty/cty"
 	"reflect"
 	"strings"
+	"switchboard/internal/shared"
 	"testing"
 )
 
-func Test_partialVariableConfig_coalesceValue(t *testing.T) {
+func Test_partialVariableConfig_coalescedValue(t *testing.T) {
 	type args struct {
 		varType      cty.Type
 		defaultValue cty.Value
@@ -234,7 +233,7 @@ func Test_variableStepConfig_CalculatedVariables(t *testing.T) {
 		name           string
 		fields         variableStepConfig
 		args           args
-		want           map[string]cty.Value
+		want           []shared.Variable
 		wantErrorCount int
 	}{
 		{
@@ -243,12 +242,32 @@ func Test_variableStepConfig_CalculatedVariables(t *testing.T) {
 			args{
 				variableOverrides,
 			},
-			map[string]cty.Value{
-				"service_address":  cty.StringVal("https://my-server.com"),
-				"service_active":   cty.BoolVal(true),
-				"service_password": cty.NumberIntVal(1),
-				"service_user":     cty.StringVal("joe"),
-				"service_other":    cty.NumberIntVal(1),
+			[]shared.Variable{
+				{
+					Name:  "service_address",
+					Type:  cty.String,
+					Value: cty.StringVal("https://my-server.com"),
+				},
+				{
+					Name:  "service_active",
+					Type:  cty.Bool,
+					Value: cty.BoolVal(true),
+				},
+				{
+					Name:  "service_password",
+					Type:  cty.Number,
+					Value: cty.NumberIntVal(1),
+				},
+				{
+					Name:  "service_user",
+					Type:  cty.String,
+					Value: cty.StringVal("joe"),
+				},
+				{
+					Name:  "service_other",
+					Type:  cty.Number,
+					Value: cty.NumberIntVal(1),
+				},
 			},
 			0,
 		},
@@ -272,13 +291,21 @@ func Test_variableStepConfig_CalculatedVariables(t *testing.T) {
 			if len(got) != len(tt.want) {
 				t.Errorf("CalculatedVariables() expected to have a map with %v keys. Got %v", len(tt.want), len(got))
 			}
-			for k, v := range tt.want {
-				if gotVal, ok := got[k]; !ok {
-					t.Errorf("CalculatedVariables() expected returned map to have '%s' key, but none exists", k)
-				} else {
-					if !gotVal.RawEquals(v) {
-						t.Errorf("CalculatedVariables() expected map key '%s' to = %s got = %s", k, v.GoString(), gotVal.GoString())
+			for _, k := range tt.want {
+				match := false
+				for _, k2 := range got {
+					if k2.Name == k.Name {
+						match = true
+						if k2.Type != k.Type {
+							t.Errorf("CalculatedVariables() expected variable '%s' to have a type = %s. Got %s", k.Name, k.Type.FriendlyName(), k2.Type.FriendlyName())
+						}
+						if !k2.Value.RawEquals(k.Value) {
+							t.Errorf("CalculatedVariables() expected variable '%s' value to = %s got = %s", k.Name, k.Value.GoString(), k2.Value.GoString())
+						}
 					}
+				}
+				if !match {
+					t.Errorf("CalculatedVariables() expected to have a shared.Variable record with Name = %s.", k.Name)
 				}
 			}
 			if len(diag.Errs()) != tt.wantErrorCount {
@@ -295,14 +322,4 @@ func getDecodedVariableStepConfig(fileName string) variableStepConfig {
 		panic(err)
 	}
 	return configOutput
-}
-
-func getParsedBody(fileName string) hcl.Body {
-	parser := hclparse.NewParser()
-	parsedFile, diag := parser.ParseHCLFile(fileName)
-	if diag.HasErrors() {
-		panic(diag.Errs())
-	}
-	return parsedFile.Body
-
 }
