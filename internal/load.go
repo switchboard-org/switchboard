@@ -3,7 +3,7 @@ package internal
 import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/gohcl"
-	"switchboard/internal/shared"
+	"github.com/switchboard-org/switchboard/internal/shared"
 )
 
 // LoadConfig goes through the user provided config & calculates any expressions, returning a nearly completely

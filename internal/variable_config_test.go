@@ -2,10 +2,10 @@ package internal
 
 import (
 	"github.com/hashicorp/hcl/v2/hclsimple"
+	"github.com/switchboard-org/switchboard/internal/shared"
 	"github.com/zclconf/go-cty/cty"
 	"reflect"
 	"strings"
-	"switchboard/internal/shared"
 	"testing"
 )
 

@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+	"github.com/switchboard-org/switchboard/internal"
 	"log"
-	"switchboard/internal"
 )
 
 var cmdValidate = &cobra.Command{

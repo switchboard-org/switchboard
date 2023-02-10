@@ -1,4 +1,4 @@
-module switchboard
+module github.com/switchboard-org/switchboard
 
 go 1.20
 

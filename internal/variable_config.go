@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hcldec"
+	"github.com/switchboard-org/switchboard/internal/shared"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
-	"switchboard/internal/shared"
 )
 
 type variableStepConfig struct {

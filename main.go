@@ -6,7 +6,7 @@ and workflows are build inside of HCL (Hashicorp Configuration Language) files.
 */
 package main
 
-import "switchboard/cmd"
+import "github.com/switchboard-org/switchboard/cmd"
 
 func main() {
 	cmd.Execute()
