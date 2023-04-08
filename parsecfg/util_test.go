@@ -1,4 +1,4 @@
-package internal
+package parsecfg
 
 import (
 	"fmt"
@@ -46,7 +46,7 @@ func Test_getVariableDataFromJSONFile(t *testing.T) {
 		want map[string]cty.Value
 	}{
 		{
-			name: "load and parse provided json variable file",
+			name: "load and parsecfg provided json variable file",
 			args: args{varFile: "./../fixtures/variable.json"},
 			want: map[string]cty.Value{"test": cty.StringVal("variable")},
 		},
@@ -98,7 +98,7 @@ func Test_loadAllHclFilesInDir(t *testing.T) {
 		name string
 	}{
 		{
-			name: "load all shared files in current and children directories",
+			name: "load all config files in current and children directories",
 		},
 	}
 	for _, tt := range tests {

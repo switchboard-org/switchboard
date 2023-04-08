@@ -1,8 +1,7 @@
-package internal
+package parsecfg
 
 import (
 	"github.com/hashicorp/hcl/v2/hclsimple"
-	"github.com/switchboard-org/switchboard/internal/shared"
 	"github.com/zclconf/go-cty/cty"
 	"reflect"
 	"strings"
@@ -97,7 +96,7 @@ func Test_partialVariableConfig_evaluationContext(t *testing.T) {
 		}
 		calledListFunc, err := got.Functions["list"].Call([]cty.Value{cty.StringVal("string")})
 		if err != nil || calledListFunc.AsString() != "list(string)" {
-			t.Errorf("evaluationContext() did not provide a function named list, or it is implemented incorrectly")
+			t.Errorf("evaluationContext() did not providers a function named list, or it is implemented incorrectly")
 		}
 	})
 
@@ -231,9 +230,9 @@ func Test_variableStepConfig_CalculatedVariables(t *testing.T) {
 	}
 	tests := []struct {
 		name           string
-		fields         variableStepConfig
+		fields         variableBlocksParser
 		args           args
-		want           []shared.Variable
+		want           []VariableBlock
 		wantErrorCount int
 	}{
 		{
@@ -242,7 +241,7 @@ func Test_variableStepConfig_CalculatedVariables(t *testing.T) {
 			args{
 				variableOverrides,
 			},
-			[]shared.Variable{
+			[]VariableBlock{
 				{
 					Name:  "service_address",
 					Type:  cty.String,
@@ -283,13 +282,13 @@ func Test_variableStepConfig_CalculatedVariables(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := &variableStepConfig{
+			v := &variableBlocksParser{
 				Variables: tt.fields.Variables,
 				Remain:    tt.fields.Remain,
 			}
-			got, diag := v.CalculatedVariables(tt.args.overrides)
+			got, diag := v.parse(tt.args.overrides)
 			if len(got) != len(tt.want) {
-				t.Errorf("CalculatedVariables() expected to have a map with %v keys. Got %v", len(tt.want), len(got))
+				t.Errorf("parse() expected to have a map with %v keys. Got %v", len(tt.want), len(got))
 			}
 			for _, k := range tt.want {
 				match := false
@@ -297,26 +296,26 @@ func Test_variableStepConfig_CalculatedVariables(t *testing.T) {
 					if k2.Name == k.Name {
 						match = true
 						if k2.Type != k.Type {
-							t.Errorf("CalculatedVariables() expected variable '%s' to have a type = %s. Got %s", k.Name, k.Type.FriendlyName(), k2.Type.FriendlyName())
+							t.Errorf("parse() expected variable '%s' to have a type = %s. Got %s", k.Name, k.Type.FriendlyName(), k2.Type.FriendlyName())
 						}
 						if !k2.Value.RawEquals(k.Value) {
-							t.Errorf("CalculatedVariables() expected variable '%s' value to = %s got = %s", k.Name, k.Value.GoString(), k2.Value.GoString())
+							t.Errorf("parse() expected variable '%s' value to = %s got = %s", k.Name, k.Value.GoString(), k2.Value.GoString())
 						}
 					}
 				}
 				if !match {
-					t.Errorf("CalculatedVariables() expected to have a shared.Variable record with Name = %s.", k.Name)
+					t.Errorf("parse() expected to have a VariableBlock record with Name = %s.", k.Name)
 				}
 			}
 			if len(diag.Errs()) != tt.wantErrorCount {
-				t.Errorf("CalculatedVariables() expected to have %v errors. Got %v", tt.wantErrorCount, len(diag.Errs()))
+				t.Errorf("parse() expected to have %v errors. Got %v", tt.wantErrorCount, len(diag.Errs()))
 			}
 		})
 	}
 }
 
-func getDecodedVariableStepConfig(fileName string) variableStepConfig {
-	var configOutput variableStepConfig
+func getDecodedVariableStepConfig(fileName string) variableBlocksParser {
+	var configOutput variableBlocksParser
 	err := hclsimple.DecodeFile(fileName, nil, &configOutput)
 	if err != nil {
 		panic(err)

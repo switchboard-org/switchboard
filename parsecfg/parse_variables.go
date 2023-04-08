@@ -1,15 +1,14 @@
-package internal
+package parsecfg
 
 import (
 	"fmt"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hcldec"
-	"github.com/switchboard-org/switchboard/internal/shared"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
 )
 
-type variableStepConfig struct {
+type variableBlocksParser struct {
 	Variables []partialVariableConfig `hcl:"variable,block"`
 	Remain    hcl.Body                `hcl:",remain"`
 }
@@ -20,11 +19,11 @@ type partialVariableConfig struct {
 	Remain hcl.Body       `hcl:",remain"`
 }
 
-// CalculatedVariables takes the provided variable configuration blocks that each have an optional default value,
+// parse takes the provided variable configuration blocks that each have an optional default value,
 // along with a map of discrete override values, and will return a map with coalesced values, with overrides superseding defaults.
 // Will throw an error if a variable has no default or override.
-func (v *variableStepConfig) CalculatedVariables(overrides map[string]cty.Value) ([]shared.Variable, hcl.Diagnostics) {
-	var output []shared.Variable
+func (v *variableBlocksParser) parse(overrides map[string]cty.Value) ([]VariableBlock, hcl.Diagnostics) {
+	var output []VariableBlock
 	//variables will be built up in here and thrown at end if needed.
 	var diagFinal hcl.Diagnostics
 
@@ -49,7 +48,7 @@ func (v *variableStepConfig) CalculatedVariables(overrides map[string]cty.Value)
 			diagFinal = diagFinal.Extend(diag)
 			continue
 		}
-		variableConfig := shared.Variable{
+		variableConfig := VariableBlock{
 			Name:  partial.Name,
 			Type:  varType,
 			Value: variableValue,

@@ -1,4 +1,4 @@
-package shared
+package parsecfg
 
 import (
 	"github.com/zclconf/go-cty/cty/function"
