@@ -17,7 +17,12 @@ var (
 		Short: "Switchboard is a workflow automation scripting tool",
 		Long:  `Switchboard is an open-source, configuration-based, highly extensible, parallelized workflow automation tool built for developers who want to build workflow with ease, without losing the control they care about. See the docs at github.com/switchboard-org/switchboard`,
 		Run: func(cmd *cobra.Command, args []string) {
-			// Do Stuff Here
+			if cmd.HasSubCommands() && len(args) == 0 {
+				err := cmd.Help() // Display help message if no subcommands provided
+				if err != nil {
+					fmt.Println("Error displaying help:", err)
+				}
+			}
 		},
 	}
 )

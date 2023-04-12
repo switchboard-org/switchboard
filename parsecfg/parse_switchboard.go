@@ -13,40 +13,43 @@ import (
 // switchboardBlockParser is responsible for parsing the global configuration
 // that is passed in the switchboard block from user provided config.
 type switchboardBlockParser struct {
-	config     switchboardStepConfig
+	config     switchboardBlockStepConfig
 	downloader providers.Downloader
 }
 
-// switchboardStepConfig is a simple struct that allows us to parse the switchboard
+// switchboardBlockStepConfig is a simple struct that allows us to parse the switchboard
 // config block from the root of the config and leave the rest alone
-type switchboardStepConfig struct {
-	Switchboard switchboardStepBlockConfig `hcl:"switchboard,block"`
-	Remain      hcl.Body                   `hcl:",remain"`
+type switchboardBlockStepConfig struct {
+	Switchboard switchboardBlockContentsConfig `hcl:"switchboard,block"`
+	Remain      hcl.Body                       `hcl:",remain"`
 }
 
-// switchboardStepBlockConfig is the first data structure used to decode config data
+// switchboardBlockContentsConfig is the first data structure used to decode config data
 // from the switchboard block, ignoring all but version and host for later processing
-type switchboardStepBlockConfig struct {
+type switchboardBlockContentsConfig struct {
 	//Version is an expression, so we can show diagnostics if necessary upon evaluation
 	Version hcl.Expression `hcl:"version"`
-	Host    HostBlock      `hcl:"host,block"`
 	Remain  hcl.Body       `hcl:",remain"`
 }
 
-// switchboardStepProviderBlocksConfig is isolated by itself to access details for
-// diagnostics for error handling
-type switchboardStepProviderBlocksConfig struct {
-	RequiredProviders []requiredProviderBlockConfig `hcl:"required_provider,block"`
+// requiredProviderBlocksStepConfig is a struct used for parsing required providers from the
+// switchboard root block
+type requiredProviderBlocksStepConfig struct {
+	RequiredProviders []requiredProviderContentsConfig `hcl:"required_provider,block"`
 }
 
-type requiredProviderBlockConfig struct {
+// requireProviderBlockConfig
+type requiredProviderContentsConfig struct {
 	Name    string         `hcl:"name,label"`
 	Source  string         `hcl:"source"`
 	Version hcl.Expression `hcl:"version"`
-	//this is used to give us access to the hcl range
+	//there are no other fields. Remain gives us access the hcl.Range data for the block
 	Remain hcl.Body `hcl:",remain"`
 }
-type requiredProviderBlock struct {
+
+// requiredProviderData is a temporary data structure containing a fully parsed RequiredProviderBlock
+// along with its config range, for debugging.
+type requiredProviderData struct {
 	block      RequiredProviderBlock
 	blockRange hcl.Range
 }
@@ -60,23 +63,23 @@ func (c *switchboardBlockParser) parse(currentVersion string, ctx *hcl.EvalConte
 
 	blocks, diag := c.parseRequiredBlocks(c.config.Switchboard.Remain, ctx)
 	var requiredBlocks []RequiredProviderBlock
-	for _, block := range blocks {
-		requiredBlocks = append(requiredBlocks, block.block)
-	}
 	if diag.HasErrors() {
 		return nil, diag
 	}
 
 	if shouldVerifyDownloads {
-		diag = c.verifyPresenceOfPackage(blocks)
+		diag = c.verifyPresenceOfPackages(blocks)
 		if diag.HasErrors() {
 			return nil, diag
 		}
 	}
 
+	for _, block := range blocks {
+		requiredBlocks = append(requiredBlocks, block.block)
+	}
+
 	return &SwitchboardBlock{
 			Version:           versionStr,
-			Host:              c.config.Switchboard.Host,
 			RequiredProviders: requiredBlocks,
 		},
 		nil
@@ -110,6 +113,8 @@ func (c *switchboardBlockParser) init(currentVersion string, ctx *hcl.EvalContex
 	return switchboardBlock, diag
 }
 
+// parseVersion is responsible for making sure the version condition set in the user config matches the current version
+// of switchboard
 func (c *switchboardBlockParser) parseVersion(expectedVersion hcl.Expression, currentVersion string, ctx *hcl.EvalContext) (string, hcl.Diagnostics) {
 	var diagnostics hcl.Diagnostics
 	if currentVersion == "development" {
@@ -153,18 +158,19 @@ func (c *switchboardBlockParser) parseVersion(expectedVersion hcl.Expression, cu
 	return versionVal.AsString(), diagnostics
 }
 
-func (c *switchboardBlockParser) parseRequiredBlocks(remain hcl.Body, ctx *hcl.EvalContext) ([]requiredProviderBlock, hcl.Diagnostics) {
+// parseRequiredBlocks is responsible for the simple parsing of the user config required_provider blocks.
+func (c *switchboardBlockParser) parseRequiredBlocks(remain hcl.Body, ctx *hcl.EvalContext) ([]requiredProviderData, hcl.Diagnostics) {
 	requiredPackageStepBlocks, diag := c.parseRequiredPackageBlocksStep(remain, ctx)
 	if diag.HasErrors() {
 		return nil, diag
 	}
 
-	var requiredPackageBlocks []requiredProviderBlock
+	var requiredPackageBlocks []requiredProviderData
 
 	for _, provider := range requiredPackageStepBlocks.RequiredProviders {
 		block, blockDiag := c.parseRequiredPackageBlockStep(provider, ctx)
 
-		requiredPackageBlocks = append(requiredPackageBlocks, requiredProviderBlock{
+		requiredPackageBlocks = append(requiredPackageBlocks, requiredProviderData{
 			block:      block,
 			blockRange: provider.Remain.MissingItemRange(),
 		})
@@ -174,13 +180,17 @@ func (c *switchboardBlockParser) parseRequiredBlocks(remain hcl.Body, ctx *hcl.E
 
 }
 
-func (c *switchboardBlockParser) parseRequiredPackageBlocksStep(providersBody hcl.Body, ctx *hcl.EvalContext) (switchboardStepProviderBlocksConfig, hcl.Diagnostics) {
-	var providerList switchboardStepProviderBlocksConfig
+// parseRequiredPackageBlocksStep parses the hcl.Body partial data into the appropriate data structure
+// needed for the next step in the parsing process
+func (c *switchboardBlockParser) parseRequiredPackageBlocksStep(providersBody hcl.Body, ctx *hcl.EvalContext) (requiredProviderBlocksStepConfig, hcl.Diagnostics) {
+	var providerList requiredProviderBlocksStepConfig
 	diag := gohcl.DecodeBody(providersBody, ctx, &providerList)
 	return providerList, diag
 }
 
-func (c *switchboardBlockParser) parseRequiredPackageBlockStep(block requiredProviderBlockConfig, ctx *hcl.EvalContext) (RequiredProviderBlock, hcl.Diagnostics) {
+// parseRequiredPackageBlockStep converts a temporary parsed struct into a RequiredProviderBlock,
+// which is one of the final output type for required_provider blocks
+func (c *switchboardBlockParser) parseRequiredPackageBlockStep(block requiredProviderContentsConfig, ctx *hcl.EvalContext) (RequiredProviderBlock, hcl.Diagnostics) {
 	var packageVersion string
 	diag := hcl.Diagnostics{}
 	exprDiag := gohcl.DecodeExpression(block.Version, ctx, &packageVersion)
@@ -194,7 +204,9 @@ func (c *switchboardBlockParser) parseRequiredPackageBlockStep(block requiredPro
 	}, diag
 }
 
-func (c *switchboardBlockParser) verifyPresenceOfPackage(packages []requiredProviderBlock) hcl.Diagnostics {
+// verifyPresenceOfPackages takes in a list of packages and checks whether they are present in the local
+// package cache (usually in /.switchboard/packages/...)
+func (c *switchboardBlockParser) verifyPresenceOfPackages(packages []requiredProviderData) hcl.Diagnostics {
 	var diag hcl.Diagnostics
 	downloadedProviders, err := c.downloader.DownloadedProviders()
 	if err != nil {
