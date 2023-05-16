@@ -2,6 +2,7 @@ package parsecfg
 
 import (
 	"github.com/hashicorp/hcl/v2/hclsimple"
+	"github.com/switchboard-org/switchboard/internal"
 	"github.com/zclconf/go-cty/cty"
 	"reflect"
 	"strings"
@@ -232,7 +233,7 @@ func Test_variableStepConfig_CalculatedVariables(t *testing.T) {
 		name           string
 		fields         variableBlocksParser
 		args           args
-		want           []VariableBlock
+		want           []internal.VariableBlock
 		wantErrorCount int
 	}{
 		{
@@ -241,7 +242,7 @@ func Test_variableStepConfig_CalculatedVariables(t *testing.T) {
 			args{
 				variableOverrides,
 			},
-			[]VariableBlock{
+			[]internal.VariableBlock{
 				{
 					Name:  "service_address",
 					Type:  cty.String,

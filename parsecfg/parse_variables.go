@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hcldec"
+	"github.com/switchboard-org/switchboard/internal"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
 )
@@ -22,8 +23,8 @@ type partialVariableConfig struct {
 // parse takes the provided variable configuration blocks that each have an optional default value,
 // along with a map of discrete override values, and will return a map with coalesced values, with overrides superseding defaults.
 // Will throw an error if a variable has no default or override.
-func (v *variableBlocksParser) parse(overrides map[string]cty.Value) ([]VariableBlock, hcl.Diagnostics) {
-	var output []VariableBlock
+func (v *variableBlocksParser) parse(overrides map[string]cty.Value) ([]internal.VariableBlock, hcl.Diagnostics) {
+	var output []internal.VariableBlock
 	//variables will be built up in here and thrown at end if needed.
 	var diagFinal hcl.Diagnostics
 
@@ -48,7 +49,7 @@ func (v *variableBlocksParser) parse(overrides map[string]cty.Value) ([]Variable
 			diagFinal = diagFinal.Extend(diag)
 			continue
 		}
-		variableConfig := VariableBlock{
+		variableConfig := internal.VariableBlock{
 			Name:  partial.Name,
 			Type:  varType,
 			Value: variableValue,

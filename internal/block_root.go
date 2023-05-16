@@ -1,4 +1,4 @@
-package parsecfg
+package internal
 
 //this file contains the config container and all root block types
 
@@ -15,9 +15,10 @@ import (
 // Certain attributes are not known at the config parsing stage, such as variables derived from triggers
 // or workflow steps. These values will be evaluated during individual workflow cycles.
 type RootSwitchboardConfig struct {
-	Variables   []VariableBlock  `hcl:"variable,block"`
-	Switchboard SwitchboardBlock `hcl:"switchboard,block"`
-	Providers   []ProviderBlock  `hcl:"provider,block"`
+	Variables   []VariableBlock
+	Switchboard SwitchboardBlock
+	Providers   []ProviderBlock
+	Schemas     []SchemaBlock
 }
 
 // EvalContext is the high level evaluation context object used for evaluating expressions throughout

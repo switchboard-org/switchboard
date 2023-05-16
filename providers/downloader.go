@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hashicorp/go-getter"
+	"github.com/switchboard-org/switchboard/internal"
 	"golang.org/x/exp/slices"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -61,7 +61,7 @@ func (d *downloader) downloadedPackageList() ([]Package, error) {
 // packageIsDownloaded checks whether an existing package is downloaded
 // to the package cache
 func (d *downloader) packageIsDownloaded(location string, version string) (bool, error) {
-	packageName := PackageName(location)
+	packageName := internal.PackageName(location)
 	packageList, err := d.downloadedPackageList()
 	if err != nil {
 		return false, err
@@ -77,22 +77,32 @@ func (d *downloader) packageIsDownloaded(location string, version string) (bool,
 
 // downloadPackage downloads a package Version from the location, which
 // should be a public GitHub repository
-func (d *downloader) downloadPackage(location string, version string) error {
+func (d *downloader) downloadPackage(source string, version string) error {
 
-	packageDistName, err := d.distName(location)
+	packageDistName, err := d.distName(source)
 	if err != nil {
 		return err
 	}
-	var gitGetter = &getter.HttpGetter{
+	packagePath, err := d.packagePath(source, version)
+	if err != nil {
+		return err
+	}
+
+	var httpGetter = &getter.HttpGetter{
 		ReadTimeout: 10 * time.Second,
 	}
-	packageUrl, err := url.Parse(fmt.Sprintf("https://%s/releases/download/v%s/%s", location, version, packageDistName))
-	if err != nil {
-		return err
+	getterClient := getter.Client{
+		Src: fmt.Sprintf("https://%s/releases/download/v%s/%s", source, version, packageDistName),
+		Dst: packagePath,
+		Getters: map[string]getter.Getter{
+			"http":  httpGetter,
+			"https": httpGetter,
+		},
+		Mode: getter.ClientModeDir,
 	}
-	err = gitGetter.GetFile(d.packagePath(location, version), packageUrl)
+	err = getterClient.Get()
 	if err != nil {
-		removeErr := os.RemoveAll(strings.Replace(d.packagePath(location, version), "/plugin", "", 1))
+		removeErr := os.RemoveAll(packagePath)
 		if removeErr != nil {
 			log.Printf("issue removing bad file. clear out your ./switchboard/packages directory and try again. Reason: %s\n", removeErr)
 		}
@@ -100,8 +110,8 @@ func (d *downloader) downloadPackage(location string, version string) error {
 	return err
 }
 
-func (d *downloader) packagePath(location string, version string) string {
-	return fmt.Sprintf("%s/%s/%s/plugin", d.packageFolder, PackageName(location), version)
+func (d *downloader) packagePath(source string, version string) (string, error) {
+	return fmt.Sprintf("%s/%s/%s", d.packageFolder, source, version), nil
 }
 
 func (d *downloader) distName(location string) (string, error) {
@@ -115,7 +125,7 @@ func (d *downloader) distName(location string) (string, error) {
 		zipFormat = "zip"
 	}
 
-	return fmt.Sprintf("%s_%s_%s.%s", PackageName(location), osName, processorName, zipFormat), nil
+	return fmt.Sprintf("%s_%s_%s.%s", internal.PackageName(location), internal.CapitalizeFirstLetterOfWord(osName), processorName, zipFormat), nil
 }
 
 func (d *downloader) systemOs() (string, error) {

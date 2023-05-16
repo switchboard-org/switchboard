@@ -74,12 +74,12 @@ func getVariableDataFromJSONFile(varFile string) map[string]cty.Value {
 	return make(map[string]cty.Value)
 }
 
-func simpleDiagnostic(summary string, detail string, subject hcl.Range) *hcl.Diagnostic {
+func simpleDiagnostic(summary string, detail string, subject *hcl.Range) *hcl.Diagnostic {
 	return &hcl.Diagnostic{
 		Severity:    hcl.DiagError,
 		Summary:     summary,
 		Detail:      detail,
-		Subject:     &subject,
+		Subject:     subject,
 		Context:     nil,
 		Expression:  nil,
 		EvalContext: nil,

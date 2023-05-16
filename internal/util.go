@@ -3,13 +3,32 @@ package internal
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode"
 )
 
 // CurrentWorkingDir returns the value of the working directory that the CLI is executed in.
 func CurrentWorkingDir() string {
-	ex, err := os.Executable()
+	ex, err := os.Getwd()
 	if err != nil {
 		panic(err)
 	}
-	return filepath.Dir(ex)
+	return filepath.Clean(ex)
+}
+
+// Ptr is a Helper function to return a pointer value to any type
+func Ptr[T any](t T) *T {
+	return &t
+}
+
+func CapitalizeFirstLetterOfWord(word string) string {
+	if len(word) == 0 {
+		return word
+	}
+	return string(unicode.ToUpper(rune(word[0]))) + word[1:]
+}
+
+func PackageName(source string) string {
+	packageNameParts := strings.Split(source, "/")
+	return packageNameParts[len(packageNameParts)-1]
 }
