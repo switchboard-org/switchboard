@@ -32,3 +32,14 @@ func PackageName(source string) string {
 	packageNameParts := strings.Split(source, "/")
 	return packageNameParts[len(packageNameParts)-1]
 }
+
+func MergeMaps[T any](mapOne map[string]T, mapTwo map[string]T) map[string]T {
+	result := map[string]T{}
+	for key, value := range mapOne {
+		result[key] = value
+	}
+	for key, value := range mapTwo {
+		result[key] = value
+	}
+	return result
+}

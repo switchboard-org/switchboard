@@ -63,9 +63,12 @@ func (p *DefaultParser) Parse() (*internal.RootSwitchboardConfig, hcl.Diagnostic
 	}
 	switchboardConfig.Providers = providerBlocks
 	defer p.pluginManager.KillAllPlugins()
+
+	schemaBlocks, diag := p.parseSchemaBlocks(rawBody)
 	if diag.HasErrors() {
 		return nil, diag
 	}
+	switchboardConfig.Schemas = schemaBlocks
 	//process config switchboard global step
 	//check if providers are downloaded
 	//remain := variableConfig.Remain
@@ -125,4 +128,13 @@ func (p *DefaultParser) parseProviderBlocks(body hcl.Body, ctx *hcl.EvalContext)
 		return nil, diag
 	}
 	return providersStepParser.parse(ctx)
+}
+
+func (p *DefaultParser) parseSchemaBlocks(body hcl.Body) ([]internal.SchemaBlock, hcl.Diagnostics) {
+	schemaStepParser := schemaBlockParser{}
+	diag := gohcl.DecodeBody(body, schemaEvalContext(), &schemaStepParser.schemaConfigs)
+	if diag.HasErrors() {
+		return nil, diag
+	}
+	return schemaStepParser.parse()
 }
