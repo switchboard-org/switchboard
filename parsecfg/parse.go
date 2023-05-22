@@ -64,7 +64,7 @@ func (p *DefaultParser) Parse() (*internal.RootSwitchboardConfig, hcl.Diagnostic
 	switchboardConfig.Providers = providerBlocks
 	defer p.pluginManager.KillAllPlugins()
 
-	schemaBlocks, diag := p.parseSchemaBlocks(rawBody)
+	schemaBlocks, diag := p.parseSchemaBlocks(rawBody, switchboardConfig.EvalContext())
 	if diag.HasErrors() {
 		return nil, diag
 	}
@@ -130,9 +130,9 @@ func (p *DefaultParser) parseProviderBlocks(body hcl.Body, ctx *hcl.EvalContext)
 	return providersStepParser.parse(ctx)
 }
 
-func (p *DefaultParser) parseSchemaBlocks(body hcl.Body) ([]internal.SchemaBlock, hcl.Diagnostics) {
+func (p *DefaultParser) parseSchemaBlocks(body hcl.Body, ctx *hcl.EvalContext) ([]internal.SchemaBlock, hcl.Diagnostics) {
 	schemaStepParser := schemaBlockParser{}
-	diag := gohcl.DecodeBody(body, schemaEvalContext(), &schemaStepParser.schemaConfigs)
+	diag := gohcl.DecodeBody(body, schemaEvalContext(ctx), &schemaStepParser.schemaConfigs)
 	if diag.HasErrors() {
 		return nil, diag
 	}

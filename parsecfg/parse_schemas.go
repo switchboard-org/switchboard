@@ -7,6 +7,8 @@ import (
 	"github.com/switchboard-org/switchboard/internal"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
+	"golang.org/x/exp/slices"
+	"strings"
 )
 
 type schemaBlockParser struct {
@@ -23,42 +25,44 @@ type schemaBlock struct {
 	IsList   *bool          `hcl:"is_list"`
 	Format   cty.Value      `hcl:"format"`
 	Variants []variantBlock `hcl:"variant,block"`
+	Remain   hcl.Body       `hcl:",remain"` //only used for debugging purposes (nothing actually remains)
 }
 
 type variantBlock struct {
 	Name   string    `hcl:"name,label"`
 	Key    string    `hcl:"key"`
 	Format cty.Value `hcl:"format"`
+	Remain hcl.Body  `hcl:",remain"` //only used for debugging purposes (nothing actually remains)
 }
-
-const (
-	STRING          = "string"
-	NUMBER          = "number"
-	BOOLEAN         = "boolean"
-	LIST            = "list"
-	OBJECT          = "object"
-	SCHEMA_TYPE     = "type"
-	SCHEMA_REQUIRED = "required"
-	SCHEMA_NESTED   = "nestedSchema"
-)
 
 func (p *schemaBlockParser) parse() ([]internal.SchemaBlock, hcl.Diagnostics) {
 	var output []internal.SchemaBlock
 	var diagFinal hcl.Diagnostics
 
 	for _, partial := range p.schemaConfigs.Schemas {
+		partialValDiags := validateFormatValue(partial.Format, partial.Remain.MissingItemRange(), "", false, true)
+		if partialValDiags.HasErrors() {
+			diagFinal = diagFinal.Extend(partialValDiags)
+		}
 		var variants []internal.VariantBlock
 		for _, variant := range partial.Variants {
+			formatSpec := internal.SchemaFormatValueToSpec(variant.Format)
 			variants = append(variants, internal.VariantBlock{
 				Name:   variant.Name,
 				Key:    variant.Key,
-				Format: variant.Format,
+				Format: formatSpec,
 			})
+			variantValDiags := validateFormatValue(variant.Format, variant.Remain.MissingItemRange(), "", false, false)
+			if variantValDiags.HasErrors() {
+				diagFinal = diagFinal.Extend(variantValDiags)
+			}
 		}
+
+		formatSpec := internal.SchemaFormatValueToSpec(partial.Format)
 		schemaConfig := internal.SchemaBlock{
 			Name:     partial.Name,
 			IsList:   partial.IsList,
-			Format:   partial.Format,
+			Format:   formatSpec,
 			Variants: variants,
 		}
 		output = append(output, schemaConfig)
@@ -69,86 +73,124 @@ func (p *schemaBlockParser) parse() ([]internal.SchemaBlock, hcl.Diagnostics) {
 	return output, nil
 }
 
-// schematicType is a recursive function that returns the full cty.Type from the root of the provided schema.
-// All leafs will be structured to what schematic returns.
-func schematicType(schema cty.Value) cty.Type {
-	if !schema.CanIterateElements() {
-		return cty.NilType
+// validateFormatValue is a recursive function that checks whether the provided user config data for the 'format'
+// attribute has an appropriate structure
+func validateFormatValue(format cty.Value, cfgRange hcl.Range, keyPath string, isSchematicVal bool, isRootFormat bool) hcl.Diagnostics {
+	var diags hcl.Diagnostics
+	if !format.Type().IsObjectType() {
+		diags = append(diags, validationFormatStandardDiag(keyPath, &cfgRange))
+		return diags
 	}
-	// if it's not a schematic, it must be a key/val object that includes user defined schema structure
-	if !isSchematic(schema) {
-		resultMap := make(map[string]cty.Type)
-		keyValMap := schema.AsValueMap()
-		for k, v := range keyValMap {
-			resultMap[k] = schematicType(v)
+	// the base of a format object, and nested objects (either in a list or object) will not be newFormatNode value, but a key/val object as defined by the user
+	if !isSchematicVal {
+		iter := format.ElementIterator()
+		for iter.Next() {
+			k, v := iter.Element()
+			elementDiag := validateFormatValue(v, cfgRange, genKeyPathString(keyPath, k.AsString()), true, isRootFormat)
+			if elementDiag.HasErrors() {
+				diags = diags.Extend(elementDiag)
+			}
 		}
-		return cty.Object(resultMap)
+		return diags
+	}
+	// must be newFormatNode past this point as it was not explicitly defined otherwise
+	if !internal.IsFormatConstraintNode(format) {
+		diags = append(diags, validationFormatStandardDiag(keyPath, &cfgRange))
+		return diags
 	}
 
-	// schema is not a map type, let's return the cty.Type structure of the schematic.
-	baseObjectMap := map[string]cty.Type{
-		SCHEMA_TYPE:     cty.String,
-		SCHEMA_REQUIRED: cty.Bool,
+	// schema keys can only be used at the first level of the root format in the schema (not allowed in variant formats)
+	if format.Type().HasAttribute(internal.FORMAT_KEY) && (!isRootFormat || len(strings.Split(keyPath, ".")) > 1) {
+		diags = diags.Append(simpleDiagnostic("invalid 'format' value", "cannot use key() function outside of the base level of the root schema format", &cfgRange))
 	}
 
-	if schema.Type().IsObjectType() && schema.Type().HasAttribute(SCHEMA_NESTED) {
-		baseObjectMap[SCHEMA_NESTED] = schematicType(schema.GetAttr(SCHEMA_NESTED))
+	if format.Type().HasAttribute(internal.FORMAT_CHILDREN) {
+		children := format.GetAttr(internal.FORMAT_CHILDREN)
+		childrenDiags := validateFormatValue(children, cfgRange, keyPath, internal.IsFormatConstraintNode(children), isRootFormat)
+		if childrenDiags.HasErrors() {
+			diags = diags.Extend(childrenDiags)
+		}
 	}
-	return cty.Object(baseObjectMap)
 
+	return diags
 }
 
-// schematic returns a structured cty.Value object that includes details on a particular schema entry
-func schematic(valType string, required bool, nestedSchema cty.Value) cty.Value {
-	obj := map[string]cty.Value{
-		SCHEMA_TYPE:     cty.StringVal(valType),
-		SCHEMA_REQUIRED: cty.BoolVal(required),
+func validationFormatStandardDiag(keyPath string, cfgRange *hcl.Range) *hcl.Diagnostic {
+	return simpleDiagnostic("invalid 'format' value", fmt.Sprintf("format value at key path '%s' is invalid. Available functions: object(), list(). Available variables: string, number, bool.", keyPath), cfgRange)
+}
+
+func genKeyPathString(basePath string, newKey string) string {
+	if basePath == "" {
+		return newKey
 	}
-	if !nestedSchema.IsNull() {
-		obj[SCHEMA_NESTED] = nestedSchema
+	return basePath + "." + newKey
+}
+
+// newFormatNode returns a structured cty.Value object that includes details on a particular schema entry.
+// only object and list (unless primitive) type nodes will have children.
+func newFormatNode(valType string, required bool, children cty.Value) cty.Value {
+	obj := map[string]cty.Value{
+		internal.FORMAT_TYPE:     cty.StringVal(valType),
+		internal.FORMAT_REQUIRED: cty.BoolVal(required),
+	}
+	if !children.IsNull() {
+		obj[internal.FORMAT_CHILDREN] = children
 	}
 	return cty.ObjectVal(obj)
 }
 
-func isSchematic(value cty.Value) bool {
-	valType := value.Type()
-	if value.IsNull() || !value.IsKnown() || !value.CanIterateElements() || !valType.IsObjectType() {
-		return false
-	}
-	return valType.HasAttribute(SCHEMA_TYPE) && valType.HasAttribute(SCHEMA_REQUIRED)
-}
+/*
+SECTION BELOW FOR EVAL FUNCTIONS ONLY
+*/
 
-func nestedTypeFunc(args []cty.Value) (cty.Type, error) {
+func complexTypeFunc(args []cty.Value) (cty.Type, error) {
 	propSchema := args[0]
-	baseSchema := schematic(LIST, false, propSchema)
-	return schematicType(baseSchema), nil
+	baseSchema := newFormatNode(internal.LIST, false, propSchema)
+	return internal.SchemaFormatSpecType(baseSchema), nil
 }
 
-func nestedImplFunc(nestedType string) func(args []cty.Value, retType cty.Type) (cty.Value, error) {
+func complexImplFunc(outerType string) func(args []cty.Value, retType cty.Type) (cty.Value, error) {
 	return func(args []cty.Value, retType cty.Type) (cty.Value, error) {
-		schema := args[0]
-		if nestedType == OBJECT && isSchematic(schema) {
-			return cty.NilVal, errors.New("paramater for object function must be a map of key/vals")
+		childFormat := args[0]
+
+		// catches the use of raw primitive types
+		if !childFormat.Type().IsObjectType() && !childFormat.Type().IsMapType() {
+			return cty.NilVal, errors.New("parameter must be a supported type (string/number/bool variables, or a raw object)")
 		}
-		if !schema.Type().IsObjectType() && !schema.Type().IsMapType() {
-			return cty.NilVal, errors.New(fmt.Sprintf("%s parameter must be a key/val map or supported schematic. (HINT: ", nestedType))
+
+		// object children must be in key/val format (won't be a node)
+		if outerType == internal.OBJECT && internal.IsFormatConstraintNode(childFormat) {
+			return cty.NilVal, errors.New("parameter must be a map of key/vals (don't use object() func here)")
 		}
+
+		// check every value in key/val of object child format to make sure it is a node
+		// (this condition is evaluated for everything except LIST outerType with non-object children)
+		if !internal.IsFormatConstraintNode(childFormat) {
+			iter := childFormat.ElementIterator()
+			for iter.Next() {
+				_, v := iter.Element()
+				if !internal.IsFormatConstraintNode(v) {
+					return cty.NilVal, errors.New("object parameter values must be supported type (object(), list(), string, number, bool)")
+				}
+			}
+		}
+
 		return cty.ObjectVal(map[string]cty.Value{
-			SCHEMA_TYPE:     cty.StringVal(nestedType),
-			SCHEMA_REQUIRED: cty.BoolVal(false),
-			SCHEMA_NESTED:   schema,
+			internal.FORMAT_TYPE:     cty.StringVal(outerType),
+			internal.FORMAT_REQUIRED: cty.BoolVal(false),
+			internal.FORMAT_CHILDREN: childFormat,
 		}), nil
 
 	}
-
 }
 
-func schemaEvalContext() *hcl.EvalContext {
+func schemaEvalContext(parent *hcl.EvalContext) *hcl.EvalContext {
 	evalVars := map[string]cty.Value{
-		NUMBER:  schematic(NUMBER, false, cty.NilVal),
-		STRING:  schematic(STRING, false, cty.NilVal),
-		BOOLEAN: schematic(BOOLEAN, false, cty.NilVal),
+		internal.NUMBER:  newFormatNode(internal.NUMBER, false, cty.NullVal(cty.String)),
+		internal.STRING:  newFormatNode(internal.STRING, false, cty.NullVal(cty.String)),
+		internal.BOOLEAN: newFormatNode(internal.BOOLEAN, false, cty.NullVal(cty.String)),
 	}
+	evalVars = internal.MergeMaps(parent.Variables, evalVars)
 
 	var listFunc = function.New(&function.Spec{
 		Description: `used to generate a list type for variables`,
@@ -161,8 +203,8 @@ func schemaEvalContext() *hcl.EvalContext {
 				AllowMarked:      false,
 			},
 		},
-		Type: nestedTypeFunc,
-		Impl: nestedImplFunc(LIST),
+		Type: complexTypeFunc,
+		Impl: complexImplFunc(internal.LIST),
 	})
 	var objFunc = function.New(&function.Spec{
 		Description: `used to generate an object type for variables`,
@@ -175,8 +217,8 @@ func schemaEvalContext() *hcl.EvalContext {
 				AllowMarked:      false,
 			},
 		},
-		Type: nestedTypeFunc,
-		Impl: nestedImplFunc(OBJECT),
+		Type: complexTypeFunc,
+		Impl: complexImplFunc(internal.OBJECT),
 	})
 	var requiredFunc = function.New(&function.Spec{
 		Description: "used to mark a schema element as required",
@@ -189,18 +231,18 @@ func schemaEvalContext() *hcl.EvalContext {
 			},
 		},
 		Type: func(args []cty.Value) (cty.Type, error) {
-			return schematicType(args[0]), nil
+			return internal.SchemaFormatSpecType(args[0]), nil
 		},
 		Impl: func(args []cty.Value, retType cty.Type) (ret cty.Value, err error) {
-			schema := args[0]
-			if !isSchematic(schema) {
-				return cty.NilVal, errors.New("provided value must be a schematic object")
+			format := args[0]
+			if !internal.IsFormatConstraintNode(format) {
+				return cty.NilVal, errors.New("provided value must be a newFormatNode object")
 			}
-			nestedSchema := cty.NilVal
-			if schema.Type().HasAttribute(SCHEMA_NESTED) {
-				nestedSchema = schema.GetAttr(SCHEMA_NESTED)
+			children := cty.NilVal
+			if format.Type().HasAttribute(internal.FORMAT_CHILDREN) {
+				children = format.GetAttr(internal.FORMAT_CHILDREN)
 			}
-			newSchema := schematic(schema.GetAttr(SCHEMA_TYPE).AsString(), true, nestedSchema)
+			newSchema := newFormatNode(format.GetAttr(internal.FORMAT_TYPE).AsString(), true, children)
 			return newSchema, nil
 		},
 	})
@@ -216,11 +258,31 @@ func schemaEvalContext() *hcl.EvalContext {
 				AllowNull:        false,
 			},
 		},
-		Type: function.StaticReturnType(cty.DynamicPseudoType),
+		Type: func(args []cty.Value) (cty.Type, error) {
+			typeMap := map[string]cty.Type{
+				internal.FORMAT_TYPE:     cty.String,
+				internal.FORMAT_REQUIRED: cty.Bool,
+				internal.FORMAT_KEY:      cty.Bool,
+			}
+			return cty.Object(typeMap), nil
+		},
 		Impl: func(args []cty.Value, retType cty.Type) (ret cty.Value, err error) {
-			param := args[0]
-			out := param.Mark("schema_key")
-			return out, nil
+			schema := args[0]
+			if !internal.IsFormatConstraintNode(schema) {
+				return cty.NilVal, errors.New("first parameter is invalid. Use string or number variable only")
+			}
+			if !slices.Contains([]string{internal.STRING, internal.NUMBER}, schema.GetAttr(internal.FORMAT_TYPE).AsString()) {
+				return cty.NilVal, errors.New("first parameter is invalid. Use string or number variable only")
+			}
+			newSchema := map[string]cty.Value{
+				internal.FORMAT_TYPE:     schema.GetAttr(internal.FORMAT_TYPE),
+				internal.FORMAT_REQUIRED: schema.GetAttr(internal.FORMAT_REQUIRED),
+			}
+			if schema.Type().HasAttribute(internal.FORMAT_CHILDREN) {
+				newSchema[internal.FORMAT_CHILDREN] = schema.GetAttr(internal.FORMAT_CHILDREN)
+			}
+			newSchema[internal.FORMAT_KEY] = cty.BoolVal(true)
+			return cty.ObjectVal(newSchema), nil
 		},
 	})
 	evalFuncs := map[string]function.Function{
@@ -229,6 +291,7 @@ func schemaEvalContext() *hcl.EvalContext {
 		"req":    requiredFunc,
 		"key":    keyFunc,
 	}
+	evalFuncs = internal.MergeMaps(parent.Functions, evalFuncs)
 	return &hcl.EvalContext{
 		Variables: evalVars,
 		Functions: evalFuncs,
