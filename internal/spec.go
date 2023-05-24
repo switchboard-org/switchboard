@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zclconf/go-cty/cty"
+	"strings"
 )
 
 type Spec interface {
@@ -27,7 +28,7 @@ func (s *ObjectSpec) IsKey() bool {
 }
 
 func (s *ObjectSpec) Type() cty.Type {
-	var specs map[string]cty.Type
+	specs := make(map[string]cty.Type)
 	for k, v := range s.keyMap {
 		specs[k] = v.Type()
 	}
@@ -109,21 +110,25 @@ func (s *MapSpec) Children() map[string]Spec {
 // ValidateValueAgainstSpec will go through an entire value and ensure it meets the constraints of the spe
 func ValidateValueAgainstSpec(val cty.Value, spec Spec, keyPath string) []error {
 	var outputErrorList []error
-
 	if val.IsNull() && (spec.IsRequired() || spec.IsKey()) {
-		return append(outputErrorList, errors.New(fmt.Sprintf("%s value at key path '%s' is required.", spec.Type().FriendlyName(), keyPath)))
+		return append(outputErrorList, errors.New(fmt.Sprintf("missing a required %s value at '%s' key", spec.Type().FriendlyName(), keyPath)))
 	}
 
 	children := spec.Children()
 
-	// if children are nil, we have nothing else to validate
-	if children == nil {
+	if spec.Type().IsPrimitiveType() || children == nil {
 		return outputErrorList
 	}
 
 	if spec.Type().IsObjectType() {
 		for k, v := range children {
-			errs := ValidateValueAgainstSpec(val.GetAttr(k), v, fmt.Sprintf("%s.%s", keyPath, k))
+			newVal := cty.NullVal(cty.DynamicPseudoType)
+			if val.Type().HasAttribute(k) {
+				newVal = val.GetAttr(k)
+			}
+			nextKeyPath := fmt.Sprintf("%s.%s", keyPath, k)
+			nextKeyPath = strings.TrimLeft(nextKeyPath, ".")
+			errs := ValidateValueAgainstSpec(newVal, v, nextKeyPath)
 			outputErrorList = append(outputErrorList, errs...)
 		}
 		return outputErrorList
@@ -135,10 +140,13 @@ func ValidateValueAgainstSpec(val cty.Value, spec Spec, keyPath string) []error 
 			keyMap:   children,
 		}
 		iter := val.ElementIterator()
+		count := 0
 		for iter.Next() {
-			i, v := iter.Element()
-			errs := ValidateValueAgainstSpec(v, &oSpec, fmt.Sprintf("%s[%s]", keyPath, i))
+			//list values
+			_, v := iter.Element()
+			errs := ValidateValueAgainstSpec(v, &oSpec, fmt.Sprintf("%s[%v]", keyPath, count))
 			outputErrorList = append(outputErrorList, errs...)
+			count++
 		}
 		return outputErrorList
 	}
@@ -167,7 +175,7 @@ func SchemaFormatValueToSpec(val cty.Value) Spec {
 	isReq := val.GetAttr(FORMAT_REQUIRED).True()
 	isKey := false
 	if val.Type().HasAttribute(FORMAT_KEY) {
-		val.GetAttr(FORMAT_KEY).True()
+		isKey = val.GetAttr(FORMAT_KEY).True()
 	}
 	switch typeStr {
 	case NUMBER:
