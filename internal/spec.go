@@ -12,6 +12,7 @@ type Spec interface {
 	IsKey() bool
 	Type() cty.Type
 	Children() map[string]Spec
+	Valid() bool
 }
 
 type ObjectSpec struct {
@@ -39,6 +40,18 @@ func (s *ObjectSpec) Children() map[string]Spec {
 	return s.keyMap
 }
 
+func (s *ObjectSpec) Valid() bool {
+	if s.keyMap == nil {
+		return false
+	}
+	for _, v := range s.keyMap {
+		if v == nil || !v.Valid() {
+			return false
+		}
+	}
+	return true
+}
+
 type PrimitiveSpec struct {
 	fieldType cty.Type
 	isKey     bool
@@ -59,6 +72,10 @@ func (s *PrimitiveSpec) Type() cty.Type {
 
 func (s *PrimitiveSpec) Children() map[string]Spec {
 	return nil
+}
+
+func (s *PrimitiveSpec) Valid() bool {
+	return true
 }
 
 type ListSpec struct {
@@ -83,6 +100,18 @@ func (s *ListSpec) Children() map[string]Spec {
 	return s.innerTypeSpec.Children()
 }
 
+func (s *ListSpec) Valid() bool {
+	if s.innerTypeSpec == nil {
+		return false
+	}
+	for _, v := range s.innerTypeSpec.Children() {
+		if v == nil || !v.Valid() {
+			return false
+		}
+	}
+	return true
+}
+
 // MapSpec allows us to solve the unique case of the root of all format
 // objects and children being a key/val instead of a standard format schema-looking object.
 type MapSpec map[string]Spec
@@ -105,6 +134,18 @@ func (s *MapSpec) Type() cty.Type {
 
 func (s *MapSpec) Children() map[string]Spec {
 	return *s
+}
+
+func (s *MapSpec) Valid() bool {
+	if s == nil {
+		return false
+	}
+	for _, v := range *s {
+		if v == nil || !v.Valid() {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidateValueAgainstSpec will go through an entire value and ensure it meets the constraints of the spe
@@ -203,6 +244,12 @@ func SchemaFormatValueToSpec(val cty.Value) Spec {
 		}
 	case OBJECT:
 		objSpec := SchemaFormatValueToSpec(val.GetAttr(FORMAT_CHILDREN))
+		if objSpec == nil {
+			return &ObjectSpec{
+				required: isReq,
+				keyMap:   nil,
+			}
+		}
 		return &ObjectSpec{
 			required: isReq,
 			keyMap:   objSpec.Children(),

@@ -193,3 +193,70 @@ func TestSchemaFormatValueToSpec_InvalidFormatValue(t *testing.T) {
 		t.Errorf("Expected nil spec, but got %T", spec)
 	}
 }
+
+func TestSchemaFormatValueToSpec_ValidBasicFormat(t *testing.T) {
+	formatValue := cty.ObjectVal(map[string]cty.Value{
+		FORMAT_TYPE:     cty.StringVal(STRING),
+		FORMAT_REQUIRED: cty.BoolVal(false),
+	})
+	spec := SchemaFormatValueToSpec(formatValue)
+	if spec == nil {
+		t.Errorf("Expected a spec, but got nil")
+	}
+}
+
+// newFormatNode is also a function in parse_schemas.go ... should probably simplify
+func newFormatNode(valType string, required bool, children cty.Value) cty.Value {
+	obj := map[string]cty.Value{
+		FORMAT_TYPE:     cty.StringVal(valType),
+		FORMAT_REQUIRED: cty.BoolVal(required),
+	}
+	if !children.IsNull() {
+		obj[FORMAT_CHILDREN] = children
+	}
+	return cty.ObjectVal(obj)
+}
+
+func TestSchemaFormatValueToSpec_ComplexValue(t *testing.T) {
+	nestedObj := cty.ObjectVal(map[string]cty.Value{
+		"requiredKey": newFormatNode(STRING, true, cty.NullVal(cty.String)),
+	})
+	fullConfigVal := cty.ObjectVal(map[string]cty.Value{
+		"stringKey":         newFormatNode(STRING, false, cty.NullVal(cty.String)),
+		"boolKey":           newFormatNode(BOOLEAN, true, cty.NullVal(cty.Bool)),
+		"numKey":            newFormatNode(NUMBER, false, cty.NullVal(cty.Number)),
+		"nested":            newFormatNode(OBJECT, false, nestedObj),
+		"listWithObj":       newFormatNode(LIST, false, nestedObj),
+		"listWithPrimitive": newFormatNode(LIST, false, newFormatNode(STRING, false, cty.NullVal(cty.String))),
+	})
+
+	spec := SchemaFormatValueToSpec(fullConfigVal)
+	if spec == nil {
+		t.Errorf("Expected a spec, but got nil")
+	}
+	if !spec.Valid() {
+		t.Errorf("Expected valid spec, but was invalid")
+	}
+}
+
+func TestSchemaFormatValueToSpec_ComplexInvalidValue(t *testing.T) {
+	nestedObj := cty.ObjectVal(map[string]cty.Value{
+		"badVal": cty.StringVal("bad"),
+	})
+	fullConfigVal := cty.ObjectVal(map[string]cty.Value{
+		"stringKey":         newFormatNode(STRING, false, cty.NullVal(cty.String)),
+		"boolKey":           newFormatNode(BOOLEAN, true, cty.NullVal(cty.Bool)),
+		"numKey":            newFormatNode(NUMBER, false, cty.NullVal(cty.Number)),
+		"nested":            newFormatNode(OBJECT, false, nestedObj),
+		"listWithObj":       newFormatNode(LIST, false, nestedObj),
+		"listWithPrimitive": newFormatNode(LIST, false, newFormatNode(STRING, false, cty.NullVal(cty.String))),
+	})
+
+	spec := SchemaFormatValueToSpec(fullConfigVal)
+	if spec == nil {
+		t.Errorf("Expected a spec, but got nil")
+	}
+	if spec.Valid() {
+		t.Errorf("Expected invalid")
+	}
+}

@@ -149,30 +149,20 @@ func complexTypeFunc(args []cty.Value) (cty.Type, error) {
 	return internal.SchemaFormatSpecType(baseSchema), nil
 }
 
+// complexImplFunc wraps an outer type (object or list) around an inner type, which can be a primitive type resulting
+// from a string, number, bool variable being use, or an object literal with all keys having a proper node value
+// (i.e. the result of using one of the  provided variables or functions)
 func complexImplFunc(outerType string) func(args []cty.Value, retType cty.Type) (cty.Value, error) {
 	return func(args []cty.Value, retType cty.Type) (cty.Value, error) {
 		childFormat := args[0]
 
 		// catches the use of raw primitive types
-		if !childFormat.Type().IsObjectType() && !childFormat.Type().IsMapType() {
-			return cty.NilVal, errors.New("parameter must be a supported type (string/number/bool variables, or a raw object)")
+		if !internal.IsAnyFormatNode(childFormat) {
+			return cty.NilVal, errors.New("parameter must be a string/number/bool variable or an object literal where all key values are a variable or function")
 		}
 
-		// object children must be in key/val format (won't be a node)
-		if outerType == internal.OBJECT && internal.IsFormatConstraintNode(childFormat) {
-			return cty.NilVal, errors.New("parameter must be a map of key/vals (don't use object() func here)")
-		}
-
-		// check every value in key/val of object child format to make sure it is a node
-		// (this condition is evaluated for everything except LIST outerType with non-object children)
-		if !internal.IsFormatConstraintNode(childFormat) {
-			iter := childFormat.ElementIterator()
-			for iter.Next() {
-				_, v := iter.Element()
-				if !internal.IsFormatConstraintNode(v) {
-					return cty.NilVal, errors.New("object parameter values must be supported type (object(), list(), string, number, bool)")
-				}
-			}
+		if slices.Contains([]string{internal.OBJECT, internal.LIST}, childFormat.GetAttr(internal.FORMAT_TYPE).AsString()) {
+			return cty.NilVal, errors.New("object() and list() functions are not allowed")
 		}
 
 		return cty.ObjectVal(map[string]cty.Value{
