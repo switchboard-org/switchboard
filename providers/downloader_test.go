@@ -33,7 +33,7 @@ func Test_downloader_distName(t *testing.T) {
 			args{
 				"github.com/switchboard-org/provider-test",
 			},
-			"provider-test_linux_x86_64.tar.gz",
+			"provider-test_Linux_x86_64.tar.gz",
 			false,
 		},
 	}
@@ -271,7 +271,7 @@ func Test_downloader_packagePath(t *testing.T) {
 				location: "github.com/switchboard-org/provider-stripe",
 				version:  "0.0.3",
 			},
-			"./packages/provider-stripe/0.0.3/plugin",
+			"./packages/github.com/switchboard-org/provider-stripe/0.0.3",
 		},
 	}
 	for _, tt := range tests {
@@ -281,7 +281,7 @@ func Test_downloader_packagePath(t *testing.T) {
 				arch:          tt.fields.arch,
 				packageFolder: tt.fields.packageFolder,
 			}
-			if got := d.packagePath(tt.args.location, tt.args.version); got != tt.want {
+			if got, _ := d.packagePath(tt.args.location, tt.args.version); got != tt.want {
 				t.Errorf("packagePath() = %v, want %v", got, tt.want)
 			}
 		})

@@ -258,3 +258,16 @@ func SchemaFormatValueToSpec(val cty.Value) Spec {
 
 	return nil
 }
+
+// ShallowMergeMapSpecs takes two specs and merges them, with the rightSpec taking precedent
+// over any duplicates on the left.
+func ShallowMergeMapSpecs(leftSpec MapSpec, rightSpec MapSpec) MapSpec {
+	finalSpec := MapSpec{}
+	for k, v := range leftSpec.Children() {
+		finalSpec[k] = v
+	}
+	for k, v := range rightSpec.Children() {
+		finalSpec[k] = v
+	}
+	return finalSpec
+}

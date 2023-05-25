@@ -40,7 +40,7 @@ func (p *schemaBlockParser) parse() ([]internal.SchemaBlock, hcl.Diagnostics) {
 	var diagFinal hcl.Diagnostics
 
 	for _, partial := range p.schemaConfigs.Schemas {
-		partialValDiags := validateFormatValue(partial.Format, partial.Remain.MissingItemRange(), "", false, true)
+		partialValDiags := validateFormatValue(partial.Format, partial.Remain.MissingItemRange(), "", true)
 		if partialValDiags.HasErrors() {
 			diagFinal = diagFinal.Extend(partialValDiags)
 		}
@@ -52,7 +52,7 @@ func (p *schemaBlockParser) parse() ([]internal.SchemaBlock, hcl.Diagnostics) {
 				Key:    variant.Key,
 				Format: formatSpec,
 			})
-			variantValDiags := validateFormatValue(variant.Format, variant.Remain.MissingItemRange(), "", false, false)
+			variantValDiags := validateFormatValue(variant.Format, variant.Remain.MissingItemRange(), "", false)
 			if variantValDiags.HasErrors() {
 				diagFinal = diagFinal.Extend(variantValDiags)
 			}
@@ -75,18 +75,19 @@ func (p *schemaBlockParser) parse() ([]internal.SchemaBlock, hcl.Diagnostics) {
 
 // validateFormatValue is a recursive function that checks whether the provided user config data for the 'format'
 // attribute has an appropriate structure
-func validateFormatValue(format cty.Value, cfgRange hcl.Range, keyPath string, isSchematicVal bool, isRootFormat bool) hcl.Diagnostics {
+func validateFormatValue(format cty.Value, cfgRange hcl.Range, keyPath string, isRootFormat bool) hcl.Diagnostics {
 	var diags hcl.Diagnostics
+	isKeyValNode := internal.IsFormatKeyValNode(format)
 	if !format.Type().IsObjectType() {
 		diags = append(diags, validationFormatStandardDiag(keyPath, &cfgRange))
 		return diags
 	}
-	// the base of a format object, and nested objects (either in a list or object) will not be newFormatNode value, but a key/val object as defined by the user
-	if !isSchematicVal {
+	// the top level of a format value and some FORMAT_CHILDREN fields will be key/val map instead of a constraint node, as defined by the user
+	if isKeyValNode {
 		iter := format.ElementIterator()
 		for iter.Next() {
 			k, v := iter.Element()
-			elementDiag := validateFormatValue(v, cfgRange, genKeyPathString(keyPath, k.AsString()), true, isRootFormat)
+			elementDiag := validateFormatValue(v, cfgRange, genKeyPathString(keyPath, k.AsString()), isRootFormat)
 			if elementDiag.HasErrors() {
 				diags = diags.Extend(elementDiag)
 			}
@@ -106,7 +107,7 @@ func validateFormatValue(format cty.Value, cfgRange hcl.Range, keyPath string, i
 
 	if format.Type().HasAttribute(internal.FORMAT_CHILDREN) {
 		children := format.GetAttr(internal.FORMAT_CHILDREN)
-		childrenDiags := validateFormatValue(children, cfgRange, keyPath, internal.IsFormatConstraintNode(children), isRootFormat)
+		childrenDiags := validateFormatValue(children, cfgRange, keyPath, isRootFormat)
 		if childrenDiags.HasErrors() {
 			diags = diags.Extend(childrenDiags)
 		}

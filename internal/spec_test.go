@@ -260,3 +260,38 @@ func TestSchemaFormatValueToSpec_ComplexInvalidValue(t *testing.T) {
 		t.Errorf("Expected invalid")
 	}
 }
+
+func TestShallowMergeMapSpecs(t *testing.T) {
+	mapOne := MapSpec{
+		"test": &PrimitiveSpec{
+			fieldType: cty.String,
+			isKey:     false,
+			required:  false,
+		},
+	}
+	mapTwo := MapSpec{
+		"test": &PrimitiveSpec{
+			fieldType: cty.String,
+			isKey:     false,
+			required:  true,
+		},
+		"other": &PrimitiveSpec{
+			fieldType: cty.String,
+			isKey:     false,
+			required:  false,
+		},
+	}
+	spec := ShallowMergeMapSpecs(mapOne, mapTwo)
+	if spec == nil {
+		t.Errorf("Expected a spec but got nil")
+	}
+	children := spec.Children()
+	for k, v := range children {
+		if k == "test" && !v.IsRequired() {
+			t.Errorf("Expected 'test' value to be required")
+		}
+	}
+	if len(children) != 2 {
+		t.Errorf("Expected map length of 2 but got %v", len(children))
+	}
+}

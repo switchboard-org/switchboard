@@ -31,6 +31,14 @@ func (conf *RootSwitchboardConfig) EvalContext() *hcl.EvalContext {
 	for _, value := range conf.Variables {
 		evalContextVariables[value.Name] = value.Value
 	}
+	if conf.Schemas != nil || len(conf.Schemas) != 0 {
+		schemaMap := make(map[string]cty.Value)
+		// the key of the schema will be the name, and the value the index of the object
+		for i, schema := range conf.Schemas {
+			schemaMap[schema.Name] = cty.NumberIntVal(int64(i))
+		}
+		evalContextVariables["schemas"] = cty.ObjectVal(schemaMap)
+	}
 
 	evalContext.Variables = evalContextVariables
 	evalContext.Functions = generalContextFunctions()
